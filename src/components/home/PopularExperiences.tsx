@@ -1,14 +1,27 @@
-import React from 'react';
+'use client';
+
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Activity } from '@/types';
 import ActivityCard from '@/components/common/ActivityCard';
+import { getActivities } from '@/lib/data';
 import { ArrowRight, Sparkles } from 'lucide-react';
 
 interface PopularExperiencesProps {
   activities: Activity[];
 }
 
-export default function PopularExperiences({ activities }: PopularExperiencesProps) {
+export default function PopularExperiences({ activities: initialActivities }: PopularExperiencesProps) {
+  const [activitiesList, setActivitiesList] = useState<Activity[]>(initialActivities);
+
+  useEffect(() => {
+    async function loadActivities() {
+      const list = await getActivities();
+      setActivitiesList(list);
+    }
+    loadActivities();
+  }, []);
+
   return (
     <section className="py-16 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -39,7 +52,7 @@ export default function PopularExperiences({ activities }: PopularExperiencesPro
 
         {/* Activity Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {activities.map((activity) => (
+          {activitiesList.map((activity) => (
             <ActivityCard key={activity.id} activity={activity} />
           ))}
         </div>

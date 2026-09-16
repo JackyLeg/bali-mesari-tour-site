@@ -562,6 +562,22 @@ export async function getActivities(params?: {
 }): Promise<Activity[]> {
   let list = [...INITIAL_ACTIVITIES];
 
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('custom_activities');
+      if (stored) {
+        const custom: Activity[] = JSON.parse(stored);
+        if (Array.isArray(custom) && custom.length > 0) {
+          // Merge custom activities avoiding duplicates
+          const customSlugs = new Set(custom.map((c) => c.slug));
+          list = [...custom, ...list.filter((a) => !customSlugs.has(a.slug))];
+        }
+      }
+    } catch (e) {
+      console.error('Failed to read custom_activities from localStorage', e);
+    }
+  }
+
   if (params?.query) {
     const q = params.query.toLowerCase();
     list = list.filter(

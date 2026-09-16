@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
-import { INITIAL_ACTIVITIES } from '@/lib/data';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import { Activity } from '@/types';
+import { INITIAL_ACTIVITIES, getActivities } from '@/lib/data';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { 
   BarChart3, 
   DollarSign, 
@@ -16,11 +17,40 @@ import {
   Plus, 
   Edit, 
   Trash2, 
-  Eye 
+  Eye,
+  X
 } from 'lucide-react';
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'activities' | 'bookings'>('overview');
+  const [activitiesList, setActivitiesList] = useState<Activity[]>(INITIAL_ACTIVITIES);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    async function loadAllActivities() {
+      const list = await getActivities();
+      setActivitiesList(list);
+    }
+    loadAllActivities();
+  }, []);
+
+  // New Activity Form State
+  const [formData, setFormData] = useState({
+    title: '',
+    locationName: '',
+    destinationSlug: 'ubud',
+    categorySlug: 'adventure',
+    shortDescription: '',
+    fullDescription: '',
+    highlights: 'Experienced local guide, Hotel pickup included, Sacred photos, Refreshments',
+    durationHours: 6,
+    priceOriginal: 50,
+    priceDiscounted: 35,
+    badge: 'Popular',
+    travelerType: 'Adventure' as const,
+    imageUrl: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1000&q=80'
+  });
 
   const mockBookings = [
     { ref: 'BMT-849201', name: 'Sarah Jenkins', title: 'Mount Batur Sunrise Trekking', date: '2026-09-05', guests: 2, total: 70, status: 'Confirmed' },
@@ -28,6 +58,104 @@ export default function AdminPage() {
     { ref: 'BMT-509182', name: 'Elena Rostova', title: 'Best of Ubud Private Day Tour', date: '2026-09-07', guests: 2, total: 84, status: 'Confirmed' },
     { ref: 'BMT-338210', name: 'David Miller', title: 'Ayung River Rafting & Bali Swing', date: '2026-09-08', guests: 3, total: 87, status: 'Completed' },
   ];
+
+  const handleAddActivity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+
+    const slug = formData.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '') || `tour-${Date.now()}`;
+
+    const newActivity: Activity = {
+      id: `act-${Date.now()}`,
+      title: formData.title,
+      slug: slug,
+      locationName: formData.locationName,
+      destinationSlug: formData.destinationSlug,
+      categorySlug: formData.categorySlug,
+      shortDescription: formData.shortDescription || formData.title,
+      fullDescription: formData.fullDescription || formData.shortDescription || formData.title,
+      highlights: formData.highlights.split(',').map(s => s.trim()).filter(Boolean),
+      included: ['Hotel pickup and drop-off', 'English-speaking driver', 'Mineral water', 'Insurance'],
+      notIncluded: ['Personal tips & souvenirs'],
+      itinerary: [
+        { time: '08:00 AM', title: 'Hotel Pickup', description: 'Driver arrives at your hotel lobby.' },
+        { time: '09:30 AM', title: 'Activity Start', description: 'Guided experience begins.' },
+        { time: '01:00 PM', title: 'Lunch & Drop-off', description: 'Return back to hotel.' }
+      ],
+      durationHours: Number(formData.durationHours),
+      pickupAvailable: true,
+      pickupLocations: 'Ubud, Canggu, Seminyak, Kuta, Sanur',
+      meetingPoint: 'Hotel Lobby',
+      priceOriginal: Number(formData.priceOriginal),
+      priceDiscounted: Number(formData.priceDiscounted),
+      rating: 5.0,
+      reviewCount: 1,
+      cancellationPolicy: 'Free cancellation up to 24 hours in advance',
+      badge: formData.badge as any,
+      travelerType: formData.travelerType,
+      status: 'published',
+      isFeatured: true,
+      isTrending: true,
+      images: [formData.imageUrl]
+    };
+
+    // Save to localStorage for instant persistence across pages
+    try {
+      const stored = localStorage.getItem('custom_activities');
+      const existingCustom = stored ? JSON.parse(stored) : [];
+      const updatedCustom = [newActivity, ...existingCustom];
+      localStorage.setItem('custom_activities', JSON.stringify(updatedCustom));
+    } catch (err) {
+      console.error('Error saving to localStorage:', err);
+    }
+
+    // Push to Supabase if connected
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('activities').insert([
+          {
+            title: newActivity.title,
+            slug: newActivity.slug,
+            location_name: newActivity.locationName,
+            short_description: newActivity.shortDescription,
+            full_description: newActivity.fullDescription,
+            duration_hours: newActivity.durationHours,
+            price_original: newActivity.priceOriginal,
+            price_discounted: newActivity.priceDiscounted,
+            badge: newActivity.badge,
+            traveler_type: newActivity.travelerType,
+            status: 'published'
+          }
+        ]);
+      } catch (err) {
+        console.error('Supabase error:', err);
+      }
+    }
+
+    setActivitiesList([newActivity, ...activitiesList]);
+    setSubmitting(false);
+    setIsAddModalOpen(false);
+
+    // Reset form
+    setFormData({
+      title: '',
+      locationName: '',
+      destinationSlug: 'ubud',
+      categorySlug: 'adventure',
+      shortDescription: '',
+      fullDescription: '',
+      highlights: 'Experienced local guide, Hotel pickup included, Sacred photos',
+      durationHours: 6,
+      priceOriginal: 50,
+      priceDiscounted: 35,
+      badge: 'Popular',
+      travelerType: 'Adventure',
+      imageUrl: 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1000&q=80'
+    });
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
@@ -77,7 +205,7 @@ export default function AdminPage() {
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              Tour Catalog ({INITIAL_ACTIVITIES.length})
+              Tour Catalog ({activitiesList.length})
             </button>
             <button
               onClick={() => setActiveTab('bookings')}
@@ -178,10 +306,13 @@ export default function AdminPage() {
           {activeTab === 'activities' && (
             <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
               <div className="flex items-center justify-between">
-                <h3 className="text-base font-extrabold text-gray-900">Manage Tour Inventory</h3>
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900">Manage Tour Inventory</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">Listings actively published on the marketplace.</p>
+                </div>
                 <button 
-                  onClick={() => alert('Add Activity Modal: Connected to Supabase POST /api/activities')}
-                  className="px-4 py-2 bg-emerald-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Add New Experience</span>
@@ -202,7 +333,7 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50 text-gray-700 font-medium">
-                    {INITIAL_ACTIVITIES.map((act) => (
+                    {activitiesList.map((act) => (
                       <tr key={act.id} className="hover:bg-gray-50">
                         <td className="py-3 font-bold text-gray-900 max-w-xs truncate">{act.title}</td>
                         <td className="py-3">{act.locationName}</td>
@@ -221,7 +352,7 @@ export default function AdminPage() {
                             href={`/activities/${act.slug}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 inline-block"
+                            className="p-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 inline-block"
                           >
                             <Eye className="w-3.5 h-3.5" />
                           </a>
@@ -257,6 +388,196 @@ export default function AdminPage() {
 
         </div>
       </main>
+
+      {/* Add New Tour Experience Modal Dialog */}
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-gray-100">
+            
+            <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-6">
+              <div>
+                <span className="text-[10px] font-bold uppercase text-amber-600 tracking-wider block">Admin Inventory</span>
+                <h3 className="text-xl font-extrabold text-gray-900">Add New Tour Experience</h3>
+              </div>
+              <button 
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddActivity} className="space-y-4 text-xs font-medium text-gray-700">
+              
+              <div>
+                <label className="font-bold text-gray-900 block mb-1">Tour Title *</label>
+                <input 
+                  type="text"
+                  required
+                  placeholder="e.g. Sacred Monkey Forest & Waterfall Private Tour"
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 font-semibold text-gray-900"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="font-bold text-gray-900 block mb-1">Location Name *</label>
+                  <input 
+                    type="text"
+                    required
+                    placeholder="e.g. Ubud, Gianyar"
+                    value={formData.locationName}
+                    onChange={(e) => setFormData({ ...formData, locationName: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-gray-900 block mb-1">Destination Region</label>
+                  <select 
+                    value={formData.destinationSlug}
+                    onChange={(e) => setFormData({ ...formData, destinationSlug: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 cursor-pointer"
+                  >
+                    <option value="ubud">Ubud</option>
+                    <option value="nusa-penida">Nusa Penida</option>
+                    <option value="uluwatu">Uluwatu</option>
+                    <option value="mount-batur">Mount Batur</option>
+                    <option value="canggu">Canggu & Seminyak</option>
+                    <option value="nusa-lembongan">Nusa Lembongan</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="font-bold text-gray-900 block mb-1">Category</label>
+                  <select 
+                    value={formData.categorySlug}
+                    onChange={(e) => setFormData({ ...formData, categorySlug: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600 cursor-pointer"
+                  >
+                    <option value="adventure">Adventure</option>
+                    <option value="water-sports">Water Sports</option>
+                    <option value="culture">Culture</option>
+                    <option value="day-trips">Day Trips</option>
+                    <option value="wellness">Wellness</option>
+                    <option value="food-culinary">Food & Cooking</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-gray-900 block mb-1">Original Price ($)</label>
+                  <input 
+                    type="number"
+                    value={formData.priceOriginal}
+                    onChange={(e) => setFormData({ ...formData, priceOriginal: Number(e.target.value) })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-gray-900 block mb-1">Discounted Price ($) *</label>
+                  <input 
+                    type="number"
+                    required
+                    value={formData.priceDiscounted}
+                    onChange={(e) => setFormData({ ...formData, priceDiscounted: Number(e.target.value) })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600 font-extrabold text-emerald-900"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="font-bold text-gray-900 block mb-1">Duration (Hours)</label>
+                  <input 
+                    type="number"
+                    value={formData.durationHours}
+                    onChange={(e) => setFormData({ ...formData, durationHours: Number(e.target.value) })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-gray-900 block mb-1">Badge Tag</label>
+                  <select 
+                    value={formData.badge}
+                    onChange={(e) => setFormData({ ...formData, badge: e.target.value })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600 cursor-pointer"
+                  >
+                    <option value="Bestseller">Bestseller</option>
+                    <option value="Likely to Sell Out">Likely to Sell Out</option>
+                    <option value="Top Rated">Top Rated</option>
+                    <option value="Popular">Popular</option>
+                    <option value="Special Deal">Special Deal</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-gray-900 block mb-1">Traveler Vibe</label>
+                  <select 
+                    value={formData.travelerType}
+                    onChange={(e) => setFormData({ ...formData, travelerType: e.target.value as any })}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600 cursor-pointer"
+                  >
+                    <option value="Adventure">Adventure</option>
+                    <option value="Couples">Couples</option>
+                    <option value="Families">Families</option>
+                    <option value="Culture">Culture</option>
+                    <option value="Luxury">Luxury</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-900 block mb-1">Cover Image URL *</label>
+                <input 
+                  type="text"
+                  required
+                  placeholder="https://images.unsplash.com/..."
+                  value={formData.imageUrl}
+                  onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-900 block mb-1">Short Description *</label>
+                <textarea 
+                  rows={2}
+                  required
+                  placeholder="A short summary of the experience for search result cards..."
+                  value={formData.shortDescription}
+                  onChange={(e) => setFormData({ ...formData, shortDescription: e.target.value })}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
+                />
+              </div>
+
+              <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="px-5 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-6 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-900/20 transition-all cursor-pointer"
+                >
+                  {submitting ? 'Publishing...' : 'Publish Tour Experience'}
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>

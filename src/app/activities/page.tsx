@@ -6,7 +6,7 @@ import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import ActivityCard from '@/components/common/ActivityCard';
 import { Activity, Category, Destination } from '@/types';
-import { INITIAL_ACTIVITIES, INITIAL_CATEGORIES, INITIAL_DESTINATIONS } from '@/lib/data';
+import { INITIAL_ACTIVITIES, INITIAL_CATEGORIES, INITIAL_DESTINATIONS, getActivities } from '@/lib/data';
 import { 
   Search, 
   Filter, 
@@ -38,54 +38,58 @@ function SearchContent() {
   const [filteredActivities, setFilteredActivities] = useState<Activity[]>(INITIAL_ACTIVITIES);
 
   useEffect(() => {
-    let list = [...INITIAL_ACTIVITIES];
+    async function fetchActivities() {
+      let list = await getActivities();
 
-    if (query.trim()) {
-      const q = query.toLowerCase();
-      list = list.filter(
-        (a) =>
-          a.title.toLowerCase().includes(q) ||
-          a.locationName.toLowerCase().includes(q) ||
-          a.shortDescription.toLowerCase().includes(q)
-      );
+      if (query.trim()) {
+        const q = query.toLowerCase();
+        list = list.filter(
+          (a) =>
+            a.title.toLowerCase().includes(q) ||
+            a.locationName.toLowerCase().includes(q) ||
+            a.shortDescription.toLowerCase().includes(q)
+        );
+      }
+
+      if (selectedDestination) {
+        list = list.filter((a) => a.destinationSlug === selectedDestination);
+      }
+
+      if (selectedCategory) {
+        list = list.filter((a) => a.categorySlug === selectedCategory);
+      }
+
+      if (selectedTravelerType) {
+        list = list.filter((a) => a.travelerType === selectedTravelerType);
+      }
+
+      if (selectedBadge) {
+        list = list.filter((a) => a.badge === selectedBadge);
+      }
+
+      if (maxPrice < 120) {
+        list = list.filter((a) => a.priceDiscounted <= maxPrice);
+      }
+
+      if (minRating > 0) {
+        list = list.filter((a) => a.rating >= minRating);
+      }
+
+      // Sort logic
+      if (sortBy === 'price-low') {
+        list.sort((a, b) => a.priceDiscounted - b.priceDiscounted);
+      } else if (sortBy === 'price-high') {
+        list.sort((a, b) => b.priceDiscounted - a.priceDiscounted);
+      } else if (sortBy === 'rating') {
+        list.sort((a, b) => b.rating - a.rating);
+      } else if (sortBy === 'popular') {
+        list.sort((a, b) => b.reviewCount - a.reviewCount);
+      }
+
+      setFilteredActivities(list);
     }
 
-    if (selectedDestination) {
-      list = list.filter((a) => a.destinationSlug === selectedDestination);
-    }
-
-    if (selectedCategory) {
-      list = list.filter((a) => a.categorySlug === selectedCategory);
-    }
-
-    if (selectedTravelerType) {
-      list = list.filter((a) => a.travelerType === selectedTravelerType);
-    }
-
-    if (selectedBadge) {
-      list = list.filter((a) => a.badge === selectedBadge);
-    }
-
-    if (maxPrice < 120) {
-      list = list.filter((a) => a.priceDiscounted <= maxPrice);
-    }
-
-    if (minRating > 0) {
-      list = list.filter((a) => a.rating >= minRating);
-    }
-
-    // Sort logic
-    if (sortBy === 'price-low') {
-      list.sort((a, b) => a.priceDiscounted - b.priceDiscounted);
-    } else if (sortBy === 'price-high') {
-      list.sort((a, b) => b.priceDiscounted - a.priceDiscounted);
-    } else if (sortBy === 'rating') {
-      list.sort((a, b) => b.rating - a.rating);
-    } else if (sortBy === 'popular') {
-      list.sort((a, b) => b.reviewCount - a.reviewCount);
-    }
-
-    setFilteredActivities(list);
+    fetchActivities();
   }, [query, selectedDestination, selectedCategory, selectedTravelerType, selectedBadge, maxPrice, minRating, sortBy]);
 
   const clearAllFilters = () => {
