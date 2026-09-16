@@ -46,6 +46,24 @@ function CheckoutContent() {
     const bookingRef = 'BMT-' + Math.floor(100000 + Math.random() * 900000);
 
     setTimeout(() => {
+      // Persist booking to localStorage so admin can see it
+      try {
+        const stored = localStorage.getItem('bookings');
+        const existing = stored ? JSON.parse(stored) : [];
+        const newBooking = {
+          ref: bookingRef,
+          name: fullName || 'Valued Guest',
+          email: email || 'guest@example.com',
+          title: activityTitle,
+          date: bookingDate,
+          guests: participants,
+          total: totalPrice,
+          status: 'Confirmed',
+          hotel: pickupHotel || '',
+        };
+        localStorage.setItem('bookings', JSON.stringify([newBooking, ...existing]));
+      } catch (_) {}
+
       const confirmParams = new URLSearchParams({
         ref: bookingRef,
         title: activityTitle,
@@ -59,6 +77,7 @@ function CheckoutContent() {
       router.push(`/booking/confirmation?${confirmParams.toString()}`);
     }, 1000);
   };
+
 
   return (
     <div className="pt-24 pb-20 min-h-screen bg-gray-50">

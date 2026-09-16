@@ -67,7 +67,7 @@ export default function Header() {
             </Link>
 
             <Link 
-              href="/destinations/ubud" 
+              href="/destinations" 
               className={`text-sm font-semibold transition-colors hover:text-amber-500 ${isScrolled ? 'text-gray-700' : 'text-white/90'}`}
             >
               Destinations
@@ -179,7 +179,7 @@ export default function Header() {
             </Link>
 
             <Link 
-              href="/destinations/ubud" 
+              href="/destinations" 
               onClick={() => setMobileMenuOpen(false)}
               className="px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-50 text-gray-800 flex items-center gap-2"
             >

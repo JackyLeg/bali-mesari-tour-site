@@ -22,6 +22,8 @@ export default function PopularExperiences({ activities: initialActivities }: Po
     loadActivities();
   }, []);
 
+  const featured = activitiesList.slice(0, 6);
+
   return (
     <section className="py-16 bg-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -45,14 +47,14 @@ export default function PopularExperiences({ activities: initialActivities }: Po
             href="/activities" 
             className="inline-flex items-center gap-1.5 text-sm font-bold text-emerald-800 hover:text-emerald-950 mt-4 md:mt-0 group"
           >
-            <span>Explore All Experiences</span>
+            <span>Explore All {activitiesList.length} Experiences</span>
             <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
           </Link>
         </div>
 
-        {/* Activity Cards Grid */}
+        {/* Activity Cards Grid — limited to 6 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {activitiesList.map((activity) => (
+          {featured.map((activity) => (
             <ActivityCard key={activity.id} activity={activity} />
           ))}
         </div>

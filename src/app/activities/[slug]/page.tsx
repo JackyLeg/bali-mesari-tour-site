@@ -39,6 +39,9 @@ export default function ActivityDetailPage() {
   const [participants, setParticipants] = useState<number>(2);
   const [includePickup, setIncludePickup] = useState<boolean>(true);
 
+  // Share state
+  const [shareCopied, setShareCopied] = useState(false);
+
   useEffect(() => {
     async function loadData() {
       setLoading(true);
@@ -106,6 +109,24 @@ export default function ActivityDetailPage() {
       pickup: includePickup ? 'yes' : 'no'
     });
     router.push(`/checkout?${bookingParams.toString()}`);
+  };
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    const shareData = { title: activity.title, text: activity.shortDescription, url };
+    try {
+      if (navigator.share && navigator.canShare?.(shareData)) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(url);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2500);
+      }
+    } catch (_) {
+      await navigator.clipboard.writeText(url).catch(() => {});
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    }
   };
 
   return (
@@ -178,9 +199,19 @@ export default function ActivityDetailPage() {
                   <span>{activity.travelerType} Preference</span>
                 </div>
 
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight leading-snug mb-3">
-                  {activity.title}
-                </h1>
+                <div className="flex items-start justify-between gap-4">
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight leading-snug mb-3">
+                    {activity.title}
+                  </h1>
+                  <button
+                    onClick={handleShare}
+                    title="Share this tour"
+                    className="shrink-0 flex items-center gap-1.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 px-3 py-2 rounded-xl transition-colors mt-1"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span>{shareCopied ? 'Link Copied!' : 'Share'}</span>
+                  </button>
+                </div>
 
                 <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-gray-700 pb-6 border-b border-gray-200">
                   <div className="flex items-center gap-1">
