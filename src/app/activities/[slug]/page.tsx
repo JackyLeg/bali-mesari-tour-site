@@ -21,8 +21,204 @@ import {
   Share2, 
   Heart,
   ChevronRight,
-  Info
+  Info,
+  MessageSquarePlus,
+  X
 } from 'lucide-react';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+
+function WriteReviewModal({
+  activityId,
+  activityTitle,
+  defaultUserName = '',
+  defaultBookingRef = '',
+  onClose,
+  onReviewSubmitted,
+}: {
+  activityId: string;
+  activityTitle: string;
+  defaultUserName?: string;
+  defaultBookingRef?: string;
+  onClose: () => void;
+  onReviewSubmitted: (newReview: Review) => void;
+}) {
+  const [userName, setUserName] = useState(defaultUserName);
+  const [userCountry, setUserCountry] = useState('Indonesia');
+  const [travelerType, setTravelerType] = useState('Couple');
+  const [bookingRef, setBookingRef] = useState(defaultBookingRef);
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [hoverRating, setHoverRating] = useState<number | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+
+    const reviewPayload = {
+      activity_id: activityId,
+      user_name: userName.trim() || 'Verified Guest',
+      user_country: userCountry.trim() || 'Traveler',
+      rating,
+      comment: comment.trim(),
+      traveler_type: travelerType,
+    };
+
+    let newReviewId = `rev-${Date.now()}`;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('reviews')
+          .insert([reviewPayload])
+          .select('id')
+          .maybeSingle();
+
+        if (!error && data?.id) {
+          newReviewId = data.id;
+        }
+      } catch (err) {
+        console.error('Supabase review insert error:', err);
+      }
+    }
+
+    const createdReview: Review = {
+      id: newReviewId,
+      activityId,
+      userName: reviewPayload.user_name,
+      userCountry: reviewPayload.user_country,
+      rating,
+      comment: reviewPayload.comment,
+      date: new Date().toISOString().split('T')[0],
+      travelerType: travelerType as any,
+    };
+
+    onReviewSubmitted(createdReview);
+    setSubmitting(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+      <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-gray-100 relative">
+        <button onClick={onClose} className="absolute top-5 right-5 p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700">
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="mb-6">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 block mb-1">Customer Feedback</span>
+          <h3 className="text-xl font-extrabold text-gray-900">Write a Review</h3>
+          <p className="text-xs text-gray-500 mt-1 line-clamp-1">{activityTitle}</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs font-medium text-gray-700">
+          <div>
+            <label className="font-bold text-gray-900 block mb-1.5">Your Overall Rating *</label>
+            <div className="flex items-center gap-1.5">
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  type="button"
+                  key={star}
+                  onClick={() => setRating(star)}
+                  onMouseEnter={() => setHoverRating(star)}
+                  onMouseLeave={() => setHoverRating(null)}
+                  className="p-1 transition-transform hover:scale-110 focus:outline-none cursor-pointer"
+                >
+                  <Star
+                    className={`w-6 h-6 ${(hoverRating ?? rating) >= star ? 'text-amber-400 fill-amber-400' : 'text-gray-300'}`}
+                  />
+                </button>
+              ))}
+              <span className="text-xs font-bold text-gray-600 ml-2">
+                {rating === 5 ? 'Exceptional (5/5)' : rating === 4 ? 'Very Good (4/5)' : rating === 3 ? 'Good (3/5)' : `${rating}/5`}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">Your Name *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Sarah Jenkins"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-900 font-semibold"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">Country of Origin *</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Australia, Germany, USA"
+                value={userCountry}
+                onChange={(e) => setUserCountry(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-900"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">Traveler Type</label>
+              <select
+                value={travelerType}
+                onChange={(e) => setTravelerType(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-800 cursor-pointer"
+              >
+                <option value="Couple">Couple</option>
+                <option value="Family">Family with Kids</option>
+                <option value="Solo">Solo Traveler</option>
+                <option value="Friends">Group of Friends</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">Booking Ref <span className="font-normal text-gray-400">(Optional)</span></label>
+              <input
+                type="text"
+                placeholder="e.g. BMT-849201"
+                value={bookingRef}
+                onChange={(e) => setBookingRef(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-900"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold text-gray-900 block mb-1">Your Review & Experience *</label>
+            <textarea
+              rows={4}
+              required
+              placeholder="Tell other travelers about your tour experience, guide, scenery, and tips..."
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-600 leading-relaxed text-gray-900"
+            />
+          </div>
+
+          <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="px-6 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-900/20 transition-all cursor-pointer disabled:opacity-60"
+            >
+              {submitting ? 'Submitting...' : 'Submit Verified Review'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 export default function ActivityDetailPage() {
   const params = useParams();
@@ -41,6 +237,43 @@ export default function ActivityDetailPage() {
 
   // Share state
   const [shareCopied, setShareCopied] = useState(false);
+
+  // Review modal state
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [initialReviewName, setInitialReviewName] = useState('');
+  const [initialReviewRef, setInitialReviewRef] = useState('');
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const search = new URLSearchParams(window.location.search);
+      if (search.get('review') === 'true' || search.get('action') === 'review') {
+        const prefillName = search.get('name') || '';
+        const prefillRef = search.get('ref') || '';
+        if (prefillName) setInitialReviewName(prefillName);
+        if (prefillRef) setInitialReviewRef(prefillRef);
+        setReviewModalOpen(true);
+      }
+    }
+  }, []);
+
+  const handleReviewSubmitted = (newReview: Review) => {
+    const updatedReviews = [newReview, ...reviews];
+    setReviews(updatedReviews);
+
+    // Recalculate average rating
+    const avg = updatedReviews.reduce((sum, r) => sum + r.rating, 0) / updatedReviews.length;
+    if (activity) {
+      setActivity({
+        ...activity,
+        rating: Number(avg.toFixed(1)),
+        reviewCount: (activity.reviewCount || 0) + 1,
+      });
+    }
+
+    setToastMsg('Thank you! Your verified traveler review has been published.');
+    setTimeout(() => setToastMsg(null), 4000);
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -313,15 +546,25 @@ export default function ActivityDetailPage() {
               </div>
 
               {/* Reviews Breakdown */}
-              <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                <div className="flex items-center justify-between mb-6">
+              <div id="reviews" className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm scroll-mt-24">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                   <div>
                     <h3 className="text-base font-extrabold text-gray-900">Verified Traveler Reviews</h3>
                     <p className="text-xs text-gray-500 mt-0.5">{reviews.length} authentic ratings from recent guests</p>
                   </div>
-                  <div className="text-right">
-                    <span className="text-2xl font-extrabold text-gray-900">{activity.rating}</span>
-                    <span className="text-xs text-gray-400"> / 5.0</span>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setReviewModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 font-bold text-xs transition-colors shadow-sm cursor-pointer"
+                    >
+                      <MessageSquarePlus className="w-4 h-4 text-emerald-700" />
+                      <span>Write a Review</span>
+                    </button>
+                    <div className="text-right">
+                      <span className="text-2xl font-extrabold text-gray-900">{activity.rating}</span>
+                      <span className="text-xs text-gray-400"> / 5.0</span>
+                    </div>
                   </div>
                 </div>
 
@@ -495,6 +738,25 @@ export default function ActivityDetailPage() {
           Book Now
         </button>
       </div>
+
+      {/* Toast Notification */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-950 text-white text-xs font-bold px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2 border border-emerald-700 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
+
+      {reviewModalOpen && activity && (
+        <WriteReviewModal
+          activityId={activity.id}
+          activityTitle={activity.title}
+          defaultUserName={initialReviewName}
+          defaultBookingRef={initialReviewRef}
+          onClose={() => setReviewModalOpen(false)}
+          onReviewSubmitted={handleReviewSubmitted}
+        />
+      )}
 
       <Footer />
     </div>

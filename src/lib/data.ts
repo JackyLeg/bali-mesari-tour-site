@@ -698,6 +698,33 @@ export async function getActivityBySlug(slug: string): Promise<Activity | null> 
 }
 
 export async function getReviewsForActivity(activityId: string): Promise<Review[]> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('reviews')
+        .select('*')
+        .eq('activity_id', activityId)
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        const dbReviews: Review[] = data.map((r: any) => ({
+          id: r.id,
+          activityId: r.activity_id || activityId,
+          userName: r.user_name,
+          userCountry: r.user_country || 'Traveler',
+          rating: Number(r.rating) || 5,
+          comment: r.comment,
+          date: r.review_date || new Date().toISOString().split('T')[0],
+          travelerType: r.traveler_type || 'Couple',
+        }));
+
+        const initialForAct = INITIAL_REVIEWS.filter((r) => r.activityId === activityId);
+        return [...dbReviews, ...initialForAct];
+      }
+    } catch (e) {
+      console.warn('Could not fetch reviews from Supabase:', e);
+    }
+  }
   return INITIAL_REVIEWS.filter((r) => r.activityId === activityId);
 }
 

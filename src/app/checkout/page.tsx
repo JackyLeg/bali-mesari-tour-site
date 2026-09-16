@@ -24,6 +24,7 @@ function CheckoutContent() {
   const router = useRouter();
 
   const activityTitle = searchParams.get('activityTitle') || 'Mount Batur Sunrise Trekking';
+  const activitySlug = searchParams.get('slug') || '';
   const bookingDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
   const participants = Number(searchParams.get('participants') || 2);
   const pricePerPerson = Number(searchParams.get('pricePerPerson') || 35);
@@ -84,9 +85,14 @@ function CheckoutContent() {
     } catch (_) {}
 
     const confirmParams = new URLSearchParams({
-      ref: bookingRef, title: activityTitle, date: bookingDate,
-      guests: participants.toString(), total: totalPrice.toString(),
-      name: guestName, email: guestEmail,
+      ref: bookingRef,
+      title: activityTitle,
+      slug: activitySlug,
+      date: bookingDate,
+      guests: participants.toString(),
+      total: totalPrice.toString(),
+      name: guestName,
+      email: guestEmail,
       hotel: pickupHotel || 'Ubud Hotel Lobby',
     });
     router.push(`/booking/confirmation?${confirmParams.toString()}`);

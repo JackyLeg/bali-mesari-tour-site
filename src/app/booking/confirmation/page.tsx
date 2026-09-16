@@ -14,7 +14,9 @@ import {
   Share2, 
   Clock, 
   ShieldCheck, 
-  Home 
+  Home,
+  Star,
+  MessageSquarePlus
 } from 'lucide-react';
 
 function ConfirmationContent() {
@@ -23,6 +25,7 @@ function ConfirmationContent() {
 
   const ref = searchParams.get('ref') || 'BMT-849201';
   const title = searchParams.get('title') || 'Mount Batur Sunrise Trekking & Hot Springs';
+  const slug = searchParams.get('slug') || '';
   const date = searchParams.get('date') || '2026-09-05';
   const guests = searchParams.get('guests') || '2';
   const total = searchParams.get('total') || '70';
@@ -133,10 +136,40 @@ function ConfirmationContent() {
                 href={`https://wa.me/6285128016716?text=Hi%20Bali%20Mesari,%20I%20have%20booking%20ref%20${ref}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-4 py-2 bg-amber-400 text-emerald-950 font-bold text-xs rounded-xl shrink-0 shadow-sm"
+                className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold text-xs rounded-xl shrink-0 shadow-sm transition-colors"
               >
                 Chat WA
               </a>
+            </div>
+
+            {/* Verified Review CTA */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-xs">
+                <div className="flex items-center gap-1.5 font-extrabold text-amber-950 mb-0.5">
+                  <div className="flex text-amber-500">
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                    <Star className="w-3.5 h-3.5 fill-amber-400" />
+                  </div>
+                  <span>Have you completed this tour or traveled with us?</span>
+                </div>
+                <p className="text-amber-800 text-[11px] mt-0.5">
+                  Your feedback helps other travelers! You can leave an authentic review and rating anytime.
+                </p>
+              </div>
+              <button 
+                type="button"
+                onClick={() => {
+                  const targetSlug = slug || 'mount-batur-sunrise-trekking';
+                  router.push(`/activities/${targetSlug}?review=true&name=${encodeURIComponent(name)}&ref=${encodeURIComponent(ref)}#reviews`);
+                }}
+                className="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shrink-0 shadow-sm flex items-center gap-2 transition-transform hover:scale-105"
+              >
+                <MessageSquarePlus className="w-3.5 h-3.5 text-amber-300" />
+                <span>Write a Review</span>
+              </button>
             </div>
 
           </div>
