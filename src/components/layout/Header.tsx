@@ -88,16 +88,7 @@ export default function Header() {
               Travel Guide
             </Link>
 
-            <Link 
-              href="/admin" 
-              className={`text-xs font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                isScrolled 
-                  ? 'border-gray-200 text-gray-600 hover:border-emerald-600 hover:text-emerald-700' 
-                  : 'border-white/30 text-white/80 hover:border-white hover:text-white'
-              }`}
-            >
-              Admin Portal
-            </Link>
+
           </nav>
 
           {/* Right Action Buttons */}
@@ -135,7 +126,7 @@ export default function Header() {
 
             {/* Direct WhatsApp / Support */}
             <a 
-              href="https://wa.me/6281234567890?text=Hello%20Bali%20Mesari%20Tour,%20I%20want%20to%20ask%20about%20booking" 
+              href="https://wa.me/6285128016716?text=Hello%20Bali%20Mesari%20Tour,%20I%20want%20to%20ask%20about%20booking" 
               target="_blank" 
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-amber-400 hover:bg-amber-300 px-3.5 py-2 rounded-xl shadow-sm hover:shadow transition-all"
@@ -205,18 +196,10 @@ export default function Header() {
               Travel Guides & Tips
             </Link>
 
-            <Link 
-              href="/admin" 
-              onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-50 text-gray-600 flex items-center gap-2"
-            >
-              <User className="w-4 h-4 text-emerald-600" />
-              Admin Portal
-            </Link>
 
             <div className="pt-3 border-t border-gray-100 flex flex-col gap-2">
               <a 
-                href="https://wa.me/6281234567890?text=Hello%20Bali%20Mesari%20Tour" 
+                href="https://wa.me/6285128016716?text=Hello%20Bali%20Mesari%20Tour" 
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full text-center py-2.5 bg-amber-400 hover:bg-amber-300 text-emerald-900 font-bold rounded-xl text-sm shadow-sm"

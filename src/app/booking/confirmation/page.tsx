@@ -130,7 +130,7 @@ function ConfirmationContent() {
                 <p className="text-emerald-700 mt-0.5">Chat directly with local operator on WhatsApp.</p>
               </div>
               <a 
-                href={`https://wa.me/6281234567890?text=Hi%20Bali%20Mesari,%20I%20have%20booking%20ref%20${ref}`}
+                href={`https://wa.me/6285128016716?text=Hi%20Bali%20Mesari,%20I%20have%20booking%20ref%20${ref}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-4 py-2 bg-amber-400 text-emerald-950 font-bold text-xs rounded-xl shrink-0 shadow-sm"

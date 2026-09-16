@@ -562,6 +562,71 @@ export async function getActivities(params?: {
 }): Promise<Activity[]> {
   let list = [...INITIAL_ACTIVITIES];
 
+  // Fetch real activities from Supabase (synced across all devices)
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: dbActivities, error } = await supabase
+        .from('activities')
+        .select(`
+          *,
+          activity_images (
+            image_url,
+            display_order
+          )
+        `)
+        .eq('status', 'published')
+        .order('created_at', { ascending: false });
+
+      if (!error && dbActivities && dbActivities.length > 0) {
+        const mapped: Activity[] = dbActivities.map((row: any) => {
+          const sortedImages = (row.activity_images || [])
+            .sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0))
+            .map((img: any) => img.image_url);
+
+          const coverImage = sortedImages[0] || 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80';
+
+          return {
+            id: row.id,
+            slug: row.slug,
+            title: row.title,
+            locationName: row.location_name || 'Bali, Indonesia',
+            destinationSlug: row.destination_id || 'ubud',
+            categorySlug: row.category_id || 'adventure',
+            shortDescription: row.short_description || '',
+            fullDescription: row.full_description || '',
+            highlights: row.highlights || [],
+            included: row.included || ['Hotel pickup & drop-off', 'English speaking guide'],
+            notIncluded: row.not_included || ['Personal expenses', 'Gratuities'],
+            itinerary: row.itinerary || [
+              { time: '08:00', title: 'Hotel Pickup', description: 'Air-conditioned transport' },
+              { time: '14:00', title: 'Return Journey', description: 'Drop off at your accommodation' }
+            ],
+            durationHours: Number(row.duration_hours) || 4,
+            pickupAvailable: Boolean(row.pickup_available ?? true),
+            pickupLocations: row.pickup_locations || 'Ubud, Sanur, Kuta, Seminyak, Canggu',
+            meetingPoint: row.meeting_point || 'Lobby of your accommodation',
+            priceOriginal: Number(row.price_original) || Number(row.price_discounted),
+            priceDiscounted: Number(row.price_discounted) || 0,
+            rating: Number(row.rating) || 5.0,
+            reviewCount: Number(row.review_count) || 0,
+            cancellationPolicy: row.cancellation_policy || 'Free cancellation up to 24 hours in advance',
+            badge: row.badge || 'Popular',
+            travelerType: row.traveler_type || 'Adventure',
+            images: sortedImages.length > 0 ? sortedImages : ['https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80'],
+            status: (row.status as 'published' | 'draft') || 'published',
+            isFeatured: Boolean(row.is_featured),
+            isTrending: Boolean(row.is_trending),
+          };
+        });
+
+        const dbSlugs = new Set(mapped.map((m) => m.slug));
+        list = [...mapped, ...list.filter((a) => !dbSlugs.has(a.slug))];
+      }
+    } catch (err) {
+      console.warn('Could not fetch activities from Supabase:', err);
+    }
+  }
+
   if (typeof window !== 'undefined') {
     try {
       const stored = localStorage.getItem('custom_activities');

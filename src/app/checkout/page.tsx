@@ -4,6 +4,7 @@ import React, { useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { 
   ShieldCheck, 
   Lock, 
@@ -39,43 +40,56 @@ function CheckoutContent() {
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'wallet' | 'arrival'>('arrival');
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmitBooking = (e: React.FormEvent) => {
+  const handleSubmitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
     const bookingRef = 'BMT-' + Math.floor(100000 + Math.random() * 900000);
+    const guestName = fullName || 'Valued Guest';
+    const guestEmail = email || 'guest@example.com';
 
-    setTimeout(() => {
-      // Persist booking to localStorage so admin can see it
+    // 1️⃣ Save to Supabase (cross-device sync)
+    if (isSupabaseConfigured && supabase) {
       try {
-        const stored = localStorage.getItem('bookings');
-        const existing = stored ? JSON.parse(stored) : [];
-        const newBooking = {
-          ref: bookingRef,
-          name: fullName || 'Valued Guest',
-          email: email || 'guest@example.com',
-          title: activityTitle,
-          date: bookingDate,
-          guests: participants,
-          total: totalPrice,
-          status: 'Confirmed',
-          hotel: pickupHotel || '',
-        };
-        localStorage.setItem('bookings', JSON.stringify([newBooking, ...existing]));
-      } catch (_) {}
+        await supabase.from('bookings').insert([{
+          booking_reference: bookingRef,
+          user_name: guestName,
+          user_email: guestEmail,
+          user_phone: phone || '-',
+          user_country: country || 'Unknown',
+          booking_date: bookingDate,
+          participants_count: participants,
+          pickup_address: pickupHotel || '',
+          special_requests: specialRequests || '',
+          total_amount: totalPrice,
+          currency: 'USD',
+          payment_status: 'confirmed',
+          booking_status: 'confirmed',
+        }]);
+      } catch (err) {
+        console.error('Supabase booking save error:', err);
+      }
+    }
 
-      const confirmParams = new URLSearchParams({
-        ref: bookingRef,
-        title: activityTitle,
-        date: bookingDate,
-        guests: participants.toString(),
-        total: totalPrice.toString(),
-        name: fullName || 'Valued Guest',
-        email: email || 'guest@example.com',
-        hotel: pickupHotel || 'Ubud Hotel Lobby'
-      });
-      router.push(`/booking/confirmation?${confirmParams.toString()}`);
-    }, 1000);
+    // 2️⃣ Also save to localStorage as offline fallback
+    try {
+      const stored = localStorage.getItem('bookings');
+      const existing = stored ? JSON.parse(stored) : [];
+      localStorage.setItem('bookings', JSON.stringify([{
+        ref: bookingRef, name: guestName, email: guestEmail,
+        title: activityTitle, date: bookingDate,
+        guests: participants, total: totalPrice,
+        status: 'Confirmed', hotel: pickupHotel || '',
+      }, ...existing]));
+    } catch (_) {}
+
+    const confirmParams = new URLSearchParams({
+      ref: bookingRef, title: activityTitle, date: bookingDate,
+      guests: participants.toString(), total: totalPrice.toString(),
+      name: guestName, email: guestEmail,
+      hotel: pickupHotel || 'Ubud Hotel Lobby',
+    });
+    router.push(`/booking/confirmation?${confirmParams.toString()}`);
   };
 
 
