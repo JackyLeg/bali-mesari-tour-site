@@ -117,20 +117,52 @@ function LoginScreen({ onLogin }: { onLogin: (session?: any) => void }) {
     }
 
     // 2. Direct master admin credential check
+    const masterPwd = (typeof window !== 'undefined' ? localStorage.getItem('master_admin_pwd') : null) || '1q2w3e';
     if (
       email.trim().toLowerCase() === 'imade.novandy23@gmail.com' &&
-      password === '1q2w3e'
+      (password === masterPwd || password === '1q2w3e')
     ) {
       try {
         localStorage.setItem('admin_fallback_auth', 'true');
         localStorage.setItem('admin_user_email', 'imade.novandy23@gmail.com');
       } catch (_) {}
-      onLogin({ user: { email: 'imade.novandy23@gmail.com' } });
+      onLogin({ user: { email: 'imade.novandy23@gmail.com', user_metadata: { role: 'super_admin', name: 'I Made Novandy' } } });
       setLoading(false);
       return;
     }
 
-    // 3. Team member login check (staff / custom accounts)
+    // 3. Supabase team_members table check (cross-device sync)
+    if (supabase) {
+      try {
+        const { data: member, error: memberErr } = await supabase
+          .from('team_members')
+          .select('*')
+          .ilike('email', email.trim().toLowerCase())
+          .maybeSingle();
+
+        if (!memberErr && member && member.status === 'active') {
+          const matchPassword = member.password === password || member.temp_password === password;
+          if (matchPassword) {
+            try {
+              localStorage.setItem('admin_fallback_auth', 'true');
+              localStorage.setItem('admin_user_email', member.email);
+            } catch (_) {}
+            onLogin({
+              user: {
+                email: member.email,
+                user_metadata: { role: member.role, name: member.name },
+              },
+            });
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Supabase team_member login query notice:', err);
+      }
+    }
+
+    // 4. Local storage fallback check (offline device fallback)
     try {
       const storedTeam = localStorage.getItem('team_members');
       const team: TeamMember[] = storedTeam ? JSON.parse(storedTeam) : INITIAL_TEAM;
@@ -913,6 +945,80 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
       } catch (_) {}
     }
     loadBookings();
+
+    // Load real team members from Supabase (cross-device sync)
+    async function loadTeamMembers() {
+      if (isSupabaseConfigured && supabase) {
+        try {
+          // Read local storage to catch any accounts created before table was ready
+          let localMembers: TeamMember[] = [];
+          try {
+            const raw = localStorage.getItem('team_members');
+            if (raw) localMembers = JSON.parse(raw);
+          } catch (_) {}
+
+          const { data, error } = await supabase
+            .from('team_members')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+          if (!error && data) {
+            const remoteEmails = new Set(data.map((d: any) => d.email.toLowerCase()));
+
+            // Auto-sync any local members that are not yet in Supabase
+            for (const local of localMembers) {
+              if (!remoteEmails.has(local.email.toLowerCase()) && local.email.toLowerCase() !== 'staff@balimesari.com') {
+                const localPwd = localStorage.getItem(`team_pwd_${local.email.toLowerCase()}`) || local.tempPassword || 'MesariStaff2026!';
+                try {
+                  await supabase.from('team_members').upsert([
+                    {
+                      id: local.id,
+                      name: local.name,
+                      email: local.email.toLowerCase().trim(),
+                      role: local.role,
+                      password: localPwd,
+                      temp_password: local.tempPassword || localPwd,
+                      status: local.status || 'active',
+                      created_at: new Date().toISOString(),
+                    },
+                  ], { onConflict: 'email' });
+                  remoteEmails.add(local.email.toLowerCase());
+                } catch (_) {}
+              }
+            }
+
+            // Build fresh team list from Supabase + any unpushed locals
+            const mapped: TeamMember[] = data.map((d: any) => ({
+              id: d.id,
+              name: d.name,
+              email: d.email,
+              role: d.role as 'super_admin' | 'staff',
+              status: (d.status as 'active' | 'suspended') || 'active',
+              tempPassword: d.temp_password || undefined,
+              createdAt: d.created_at ? d.created_at.split('T')[0] : '2026-09-16',
+            }));
+
+            const allMembers = [...mapped];
+            for (const local of localMembers) {
+              if (!allMembers.some((m) => m.email.toLowerCase() === local.email.toLowerCase())) {
+                allMembers.push(local);
+              }
+            }
+
+            // Always ensure imade.novandy23@gmail.com is present
+            if (!allMembers.some((m) => m.email.toLowerCase() === 'imade.novandy23@gmail.com')) {
+              allMembers.unshift(INITIAL_TEAM[0]);
+            }
+
+            setTeamMembers(allMembers);
+            try {
+              localStorage.setItem('team_members', JSON.stringify(allMembers));
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+    }
+    loadTeamMembers();
   }, []);
 
   const saveToSupabase = async (activity: Activity, mode: 'insert' | 'update'): Promise<{ ok: boolean; error?: string }> => {
@@ -1075,23 +1181,49 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
       } catch (_) {}
     }
 
-    // Try Supabase signUp in background
-    if (supabase && member.tempPassword) {
+    // Save to Supabase team_members table for CROSS-DEVICE SYNC
+    if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.auth.signUp({
-          email: member.email,
-          password: member.tempPassword,
-          options: {
-            data: { name: member.name, role: member.role },
-          },
-        });
-      } catch (_) {}
+        const { error } = await supabase.from('team_members').upsert(
+          [
+            {
+              id: member.id,
+              name: member.name,
+              email: member.email.trim().toLowerCase(),
+              role: member.role,
+              password: member.tempPassword || 'bali12345',
+              temp_password: member.tempPassword || null,
+              status: member.status || 'active',
+              created_at: new Date().toISOString(),
+            },
+          ],
+          { onConflict: 'email' }
+        );
+        if (error) {
+          console.warn('Supabase team_members upsert notice:', error.message);
+        }
+      } catch (err) {
+        console.warn('Supabase team_member error:', err);
+      }
+
+      // Try Supabase signUp in background
+      if (member.tempPassword) {
+        try {
+          await supabase.auth.signUp({
+            email: member.email,
+            password: member.tempPassword,
+            options: {
+              data: { name: member.name, role: member.role },
+            },
+          });
+        } catch (_) {}
+      }
     }
 
     showToast(`Added ${member.name} (${member.role === 'super_admin' ? 'Super Admin' : 'Operations Staff'})!`);
   };
 
-  const handleDeleteTeamMember = (id: string) => {
+  const handleDeleteTeamMember = async (id: string) => {
     const target = teamMembers.find(m => m.id === id);
     if (target?.email.toLowerCase() === 'imade.novandy23@gmail.com') {
       showToast('Cannot delete primary super admin account!', 'error');
@@ -1099,6 +1231,14 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
     }
     const updated = teamMembers.filter(m => m.id !== id);
     saveTeamMembers(updated);
+
+    // Delete from Supabase team_members table
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('team_members').delete().eq('id', id);
+      } catch (_) {}
+    }
+
     showToast('Team member removed.');
   };
 
@@ -1122,7 +1262,19 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
 
     setPasswordUpdating(true);
 
-    if (supabase) {
+    if (isSupabaseConfigured && supabase) {
+      // Update in team_members table across all devices
+      try {
+        await supabase
+          .from('team_members')
+          .update({
+            password: newPassword,
+            temp_password: null,
+          })
+          .ilike('email', userEmail.trim().toLowerCase());
+      } catch (_) {}
+
+      // Update Supabase Auth if authenticated
       try {
         const { error } = await supabase.auth.updateUser({ password: newPassword });
         if (error) {
