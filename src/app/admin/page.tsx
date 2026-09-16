@@ -551,8 +551,8 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     loadBookings();
   }, []);
 
-  const saveToSupabase = async (activity: Activity, mode: 'insert' | 'update') => {
-    if (!isSupabaseConfigured || !supabase) return;
+  const saveToSupabase = async (activity: Activity, mode: 'insert' | 'update'): Promise<{ ok: boolean; error?: string }> => {
+    if (!isSupabaseConfigured || !supabase) return { ok: false, error: 'Supabase is not configured' };
 
     const payload = {
       title: activity.title,
@@ -584,7 +584,9 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
         if (error) {
           console.error('Supabase activities insert error:', error.message);
-        } else if (inserted?.id && imagesToSave.length > 0) {
+          return { ok: false, error: error.message };
+        }
+        if (inserted?.id && imagesToSave.length > 0) {
           const imageRows = imagesToSave.map((url, idx) => ({
             activity_id: inserted.id,
             image_url: url,
@@ -602,7 +604,9 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
         if (error) {
           console.error('Supabase activities update error:', error.message);
-        } else if (updated?.id && imagesToSave.length > 0) {
+          return { ok: false, error: error.message };
+        }
+        if (updated?.id && imagesToSave.length > 0) {
           await supabase.from('activity_images').delete().eq('activity_id', updated.id);
           const imageRows = imagesToSave.map((url, idx) => ({
             activity_id: updated.id,
@@ -612,8 +616,10 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
           await supabase.from('activity_images').insert(imageRows);
         }
       }
-    } catch (err) {
+      return { ok: true };
+    } catch (err: any) {
       console.error('Failed to sync activity to Supabase:', err);
+      return { ok: false, error: err?.message || 'Network error' };
     }
   };
 
@@ -625,22 +631,32 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
 
   // ── CREATE ──
   const handleCreate = async (activity: Activity) => {
+    const res = await saveToSupabase(activity, 'insert');
     const updated = [activity, ...activitiesList.filter((a) => a.id !== activity.id)];
     setActivitiesList(updated);
     saveCustomLocally(updated);
-    await saveToSupabase(activity, 'insert');
     setAddModalOpen(false);
-    showToast('Tour published successfully!');
+
+    if (res.ok) {
+      showToast('Tour published & synced to Supabase successfully!');
+    } else {
+      showToast('Saved locally, but Supabase rejected sync: ' + res.error, 'error');
+    }
   };
 
   // ── UPDATE ──
   const handleUpdate = async (activity: Activity) => {
+    const res = await saveToSupabase(activity, 'update');
     const updated = activitiesList.map((a) => (a.id === activity.id ? activity : a));
     setActivitiesList(updated);
     saveCustomLocally(updated);
-    await saveToSupabase(activity, 'update');
     setEditActivity(null);
-    showToast('Tour updated successfully!');
+
+    if (res.ok) {
+      showToast('Tour updated & synced across all devices!');
+    } else {
+      showToast('Updated locally, but Supabase error: ' + res.error, 'error');
+    }
   };
 
   // ── DELETE ──
@@ -650,10 +666,15 @@ function AdminDashboard({ onLogout }: { onLogout: () => void }) {
     setActivitiesList(updated);
     saveCustomLocally(updated);
     if (isSupabaseConfigured && supabase) {
-      await supabase.from('activities').delete().eq('slug', deleteActivity.slug);
+      const { error } = await supabase.from('activities').delete().eq('slug', deleteActivity.slug);
+      if (error) {
+        showToast('Deleted locally, but Supabase error: ' + error.message, 'error');
+        setDeleteActivity(null);
+        return;
+      }
     }
     setDeleteActivity(null);
-    showToast('Tour deleted.');
+    showToast('Tour deleted from Supabase.');
   };
 
   return (
