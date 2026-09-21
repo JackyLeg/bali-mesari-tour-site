@@ -1,3 +1,14 @@
+/**
+ * 📚 HOW THIS WORKS — Header Component
+ *
+ * The Header uses useCurrency() from CurrencyContext.
+ * When the user picks a currency from the dropdown here, the context
+ * updates globally — so ALL price displays across the site
+ * (activity cards, checkout, booking summary) update simultaneously.
+ *
+ * This is the power of React Context: one state, shared everywhere.
+ */
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -9,31 +20,30 @@ import {
   Menu, 
   X, 
   PhoneCall, 
-  ShieldCheck, 
   ChevronDown, 
-  User, 
   Globe, 
   Sparkles,
-  ShoppingBag
 } from 'lucide-react';
+import { useCurrency } from '@/lib/currency';
 
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [currency, setCurrency] = useState<'USD' | 'IDR' | 'AUD' | 'EUR'>('USD');
   const [currencyDropdownOpen, setCurrencyDropdownOpen] = useState(false);
+
+  // 📚 Instead of local state, we use the global CurrencyContext.
+  // currency = current code ('USD' or 'IDR')
+  // setCurrency = function to change currency globally
+  const { currency, setCurrency } = useCurrency();
 
   useEffect(() => {
     const handleScroll = () => {
-      if (window.scrollY > 20) {
-        setIsScrolled(true);
-      } else {
-        setIsScrolled(false);
-      }
+      setIsScrolled(window.scrollY > 20);
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
 
   return (
     <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
@@ -107,19 +117,24 @@ export default function Header() {
               </button>
 
               {currencyDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-28 bg-white rounded-xl shadow-xl border border-gray-100 py-1 text-xs text-gray-800 z-50">
-                  {(['USD', 'IDR', 'AUD', 'EUR'] as const).map((curr) => (
+                <div className="absolute right-0 mt-2 w-36 bg-white rounded-xl shadow-xl border border-gray-100 py-1 text-xs text-gray-800 z-50">
+                  {/* 📚 Only USD and IDR are supported — they're wired to real conversion */}
+                  {(['USD', 'IDR'] as const).map((curr) => (
                     <button
                       key={curr}
                       onClick={() => {
                         setCurrency(curr);
                         setCurrencyDropdownOpen(false);
                       }}
-                      className={`w-full text-left px-3 py-1.5 hover:bg-emerald-50 hover:text-emerald-700 ${currency === curr ? 'font-bold text-emerald-700 bg-emerald-50/50' : ''}`}
+                      className={`w-full text-left px-3 py-2 hover:bg-emerald-50 hover:text-emerald-700 flex items-center justify-between ${currency === curr ? 'font-bold text-emerald-700 bg-emerald-50/50' : ''}`}
                     >
-                      {curr}
+                      <span>{curr === 'USD' ? '🇺🇸 USD' : '🇮🇩 IDR'}</span>
+                      {currency === curr && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md font-bold">Active</span>}
                     </button>
                   ))}
+                  <div className="px-3 py-1.5 border-t border-gray-100 text-[10px] text-gray-400">
+                    Live exchange rate
+                  </div>
                 </div>
               )}
             </div>

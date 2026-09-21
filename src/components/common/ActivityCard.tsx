@@ -1,9 +1,23 @@
+/**
+ * 📚 HOW THIS WORKS — ActivityCard Price Display
+ *
+ * useCurrency() pulls the current currency preference from the global
+ * CurrencyContext. When the user changes currency in the Header,
+ * all ActivityCards re-render immediately with the new currency
+ * because they all share the same context state.
+ *
+ * format(price) automatically:
+ *   - USD mode: "$35" or "$58"
+ *   - IDR mode: "Rp 567.000" or "Rp 939.600"
+ */
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Activity } from '@/types';
 import { Star, Clock, MapPin, Heart, CheckCircle2 } from 'lucide-react';
+import { useCurrency } from '@/lib/currency';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -28,6 +42,8 @@ function saveWishlist(ids: Set<string>) {
 
 export default function ActivityCard({ activity }: ActivityCardProps) {
   const [isWishlisted, setIsWishlisted] = useState(false);
+  // 📚 useCurrency gives us the format() function which converts USD → user's currency
+  const { format } = useCurrency();
 
   // Hydrate from localStorage after mount
   useEffect(() => {
@@ -135,11 +151,12 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
             <div className="flex items-baseline gap-1.5">
               {activity.priceOriginal && (
                 <span className="text-xs text-gray-400 line-through font-medium">
-                  ${activity.priceOriginal}
+                  {/* 📚 format() converts the USD price to the active currency */}
+                  {format(activity.priceOriginal)}
                 </span>
               )}
               <span className="text-lg font-extrabold text-emerald-900">
-                ${activity.priceDiscounted}
+                {format(activity.priceDiscounted)}
               </span>
               <span className="text-[11px] text-gray-500">/ person</span>
             </div>

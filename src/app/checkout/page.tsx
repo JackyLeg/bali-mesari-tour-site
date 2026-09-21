@@ -1,3 +1,32 @@
+/**
+ * 📚 HOW THIS WORKS — Checkout Page (src/app/checkout/page.tsx)
+ *
+ * KEY CHANGES FROM ORIGINAL:
+ *
+ * 1. CURRENCY DISPLAY:
+ *    useCurrency().format() shows prices in user's preferred currency.
+ *    The booking summary sidebar shows "Total: $70 / Rp 1,134,000"
+ *
+ * 2. INPUT SANITIZATION:
+ *    sanitizeInput() cleans all user-provided strings before they're
+ *    sent to Supabase. This prevents SQL injection (though Supabase's
+ *    parameterized queries already protect against this — defense in depth).
+ *
+ * 3. PAYPAL PAYMENT:
+ *    When user selects PayPal, we call POST /api/payment/paypal
+ *    with the booking amount. The API returns a PayPal approval URL.
+ *    We redirect the user to PayPal, they approve, PayPal redirects them
+ *    back to /booking/confirmation.
+ *
+ * 4. WISE PAYMENT:
+ *    When user selects Wise, we call POST /api/payment/wise
+ *    which generates a pre-filled Wise payment link.
+ *    We redirect the user to Wise to complete their bank transfer.
+ *
+ * 5. FORM VALIDATION:
+ *    Basic validation added for empty fields before submission.
+ */
+
 'use client';
 
 import React, { useState, Suspense } from 'react';
@@ -5,6 +34,8 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { sanitizeInput, sanitizeEmail, validateEmail } from '@/lib/security';
+import { useCurrency } from '@/lib/currency';
 import { 
   ShieldCheck, 
   Lock, 
@@ -16,12 +47,37 @@ import {
   PhoneCall, 
   Mail, 
   User, 
-  ArrowLeft 
+  ArrowLeft,
+  Globe,
+  RefreshCw,
 } from 'lucide-react';
+
+// ─── PayPal Logo SVG ──────────────────────────────────────────────────────────
+// Inline SVG so we don't need external images
+function PayPalLogo() {
+  return (
+    <svg viewBox="0 0 124 33" className="h-5" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="24" fontSize="22" fontWeight="bold" fill="#003087" fontFamily="Arial">Pay</text>
+      <text x="34" y="24" fontSize="22" fontWeight="bold" fill="#009cde" fontFamily="Arial">Pal</text>
+    </svg>
+  );
+}
+
+// ─── Wise Logo ────────────────────────────────────────────────────────────────
+function WiseLogo() {
+  return (
+    <span className="font-extrabold text-sm" style={{ color: '#163300' }}>
+      <span style={{ color: '#9fe870' }}>wise</span>
+    </span>
+  );
+}
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+
+  // 📚 useCurrency gives us format() to display prices in USD or IDR
+  const { format, currency, rate } = useCurrency();
 
   const activityTitle = searchParams.get('activityTitle') || 'Mount Batur Sunrise Trekking';
   const activitySlug = searchParams.get('slug') || '';
@@ -38,30 +94,168 @@ function CheckoutContent() {
   const [country, setCountry] = useState('Australia');
   const [pickupHotel, setPickupHotel] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'wallet' | 'arrival'>('arrival');
+  const [paymentMethod, setPaymentMethod] = useState<'arrival' | 'paypal' | 'wise'>('arrival');
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  // ─── Form Submission ─────────────────────────────────────────────────────────
 
   const handleSubmitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError('');
+
+    // ── Basic Validation ───────────────────────────────────────────────────
+    if (!fullName.trim()) {
+      setFormError('Please enter your full name.');
+      return;
+    }
+    if (!validateEmail(email)) {
+      setFormError('Please enter a valid email address.');
+      return;
+    }
+    if (!phone.trim()) {
+      setFormError('Please enter your phone number.');
+      return;
+    }
+    if (!pickupHotel.trim()) {
+      setFormError('Please enter your hotel or pickup location.');
+      return;
+    }
+
     setSubmitting(true);
 
+    // ── Sanitize ALL user inputs ───────────────────────────────────────────
+    // 📚 WHAT IS INPUT SANITIZATION?
+    // Even though Supabase uses parameterized queries (safe from SQL injection),
+    // we sanitize inputs as an extra "defense in depth" layer.
+    // sanitizeInput() removes HTML tags, SQL special chars, and trims whitespace.
+    const sanitizedName = sanitizeInput(fullName, 150);
+    const sanitizedEmail = sanitizeEmail(email);
+    const sanitizedPhone = sanitizeInput(phone, 50);
+    const sanitizedCountry = sanitizeInput(country, 100);
+    const sanitizedHotel = sanitizeInput(pickupHotel, 255);
+    const sanitizedRequests = sanitizeInput(specialRequests, 500);
+
     const bookingRef = 'BMT-' + Math.floor(100000 + Math.random() * 900000);
-    const guestName = fullName || 'Valued Guest';
-    const guestEmail = email || 'guest@example.com';
+
+    // ── Handle PayPal Payment ──────────────────────────────────────────────
+    if (paymentMethod === 'paypal') {
+      try {
+        // Call our server-side PayPal API (never expose secrets to client)
+        const res = await fetch('/api/payment/paypal', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: totalPrice,
+            bookingRef,
+            activityTitle: sanitizeInput(activityTitle, 100),
+            currency: 'USD',
+          }),
+        });
+        const data = await res.json();
+        
+        if (data.error) {
+          setFormError(data.error);
+          setSubmitting(false);
+          return;
+        }
+
+        // Save booking reference to localStorage so confirmation page can retrieve it
+        try {
+          localStorage.setItem('pending_booking_ref', bookingRef);
+          localStorage.setItem('pending_booking_data', JSON.stringify({
+            ref: bookingRef,
+            name: sanitizedName,
+            email: sanitizedEmail,
+            title: activityTitle,
+            date: bookingDate,
+            guests: participants,
+            total: totalPrice,
+            hotel: sanitizedHotel,
+          }));
+        } catch {}
+
+        // 📚 Redirect to PayPal for approval
+        // The browser navigates to PayPal's website. After the user approves,
+        // PayPal redirects them back to /booking/confirmation?paypal=success&ref=BMT-XXXX
+        window.location.href = data.approvalUrl;
+        return;
+
+      } catch (err) {
+        setFormError('Could not connect to PayPal. Please try another payment method.');
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    // ── Handle Wise Payment ────────────────────────────────────────────────
+    if (paymentMethod === 'wise') {
+      try {
+        const res = await fetch('/api/payment/wise', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: totalPrice,
+            bookingRef,
+            activityTitle: sanitizeInput(activityTitle, 100),
+            guestName: sanitizedName,
+          }),
+        });
+        const data = await res.json();
+
+        // Save pending booking so confirmation page knows what was booked
+        try {
+          localStorage.setItem('pending_booking_ref', bookingRef);
+          localStorage.setItem('pending_booking_data', JSON.stringify({
+            ref: bookingRef,
+            name: sanitizedName,
+            email: sanitizedEmail,
+            title: activityTitle,
+            date: bookingDate,
+            guests: participants,
+            total: totalPrice,
+            hotel: sanitizedHotel,
+          }));
+        } catch {}
+
+        if (data.fallback) {
+          // Wise not configured — open WhatsApp as fallback
+          window.open(data.whatsappUrl, '_blank');
+          router.push(`/booking/confirmation?ref=${bookingRef}&wise=pending&title=${encodeURIComponent(activityTitle)}&date=${bookingDate}&guests=${participants}&total=${totalPrice}&name=${encodeURIComponent(sanitizedName)}&email=${encodeURIComponent(sanitizedEmail)}&hotel=${encodeURIComponent(sanitizedHotel)}`);
+          return;
+        }
+
+        // 📚 Redirect to Wise payment page
+        window.location.href = data.paymentUrl;
+        return;
+
+      } catch (err) {
+        setFormError('Could not connect to Wise. Please try another payment method.');
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    // ── Handle Cash/Arrival Payment ───────────────────────────────────────
 
     // 1️⃣ Save to Supabase (cross-device sync)
+    // 📚 SUPABASE PARAMETERIZED QUERIES:
+    // The .insert([{...}]) call uses Supabase's JavaScript client which
+    // internally uses PostgreSQL prepared statements. User data is passed
+    // as parameters — never concatenated into SQL strings.
+    // This makes SQL injection structurally impossible, not just sanitized.
     if (isSupabaseConfigured && supabase) {
       try {
         await supabase.from('bookings').insert([{
           booking_reference: bookingRef,
-          user_name: guestName,
-          user_email: guestEmail,
-          user_phone: phone || '-',
-          user_country: country || 'Unknown',
+          user_name: sanitizedName,
+          user_email: sanitizedEmail,
+          user_phone: sanitizedPhone,
+          user_country: sanitizedCountry,
           booking_date: bookingDate,
           participants_count: participants,
-          pickup_address: pickupHotel || '',
-          special_requests: specialRequests || '',
+          pickup_address: sanitizedHotel,
+          special_requests: sanitizedRequests,
           total_amount: totalPrice,
           currency: 'USD',
           payment_status: 'confirmed',
@@ -77,10 +271,10 @@ function CheckoutContent() {
       const stored = localStorage.getItem('bookings');
       const existing = stored ? JSON.parse(stored) : [];
       localStorage.setItem('bookings', JSON.stringify([{
-        ref: bookingRef, name: guestName, email: guestEmail,
+        ref: bookingRef, name: sanitizedName, email: sanitizedEmail,
         title: activityTitle, date: bookingDate,
         guests: participants, total: totalPrice,
-        status: 'Confirmed', hotel: pickupHotel || '',
+        status: 'Confirmed', hotel: sanitizedHotel,
       }, ...existing]));
     } catch (_) {}
 
@@ -91,13 +285,16 @@ function CheckoutContent() {
       date: bookingDate,
       guests: participants.toString(),
       total: totalPrice.toString(),
-      name: guestName,
-      email: guestEmail,
-      hotel: pickupHotel || 'Ubud Hotel Lobby',
+      name: sanitizedName,
+      email: sanitizedEmail,
+      hotel: sanitizedHotel || 'Ubud Hotel Lobby',
     });
     router.push(`/booking/confirmation?${confirmParams.toString()}`);
   };
 
+  // ─── IDR equivalent display ───────────────────────────────────────────────
+  const idrTotal = Math.round(totalPrice * rate);
+  const idrFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(idrTotal);
 
   return (
     <div className="pt-24 pb-20 min-h-screen bg-gray-50">
@@ -140,6 +337,7 @@ function CheckoutContent() {
                   placeholder="e.g. Sarah Jenkins"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
+                  maxLength={150}
                   className="w-full text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
                 />
               </div>
@@ -153,6 +351,7 @@ function CheckoutContent() {
                     placeholder="sarah@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    maxLength={254}
                     className="w-full text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
                   />
                 </div>
@@ -165,6 +364,7 @@ function CheckoutContent() {
                     placeholder="+61 400 123 456"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    maxLength={50}
                     className="w-full text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
                   />
                 </div>
@@ -176,6 +376,7 @@ function CheckoutContent() {
                   type="text"
                   value={country}
                   onChange={(e) => setCountry(e.target.value)}
+                  maxLength={100}
                   className="w-full text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
                 />
               </div>
@@ -196,6 +397,7 @@ function CheckoutContent() {
                   placeholder="e.g. Padma Resort Ubud (Room 204 or Main Lobby)"
                   value={pickupHotel}
                   onChange={(e) => setPickupHotel(e.target.value)}
+                  maxLength={255}
                   className="w-full text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
                 />
               </div>
@@ -207,12 +409,22 @@ function CheckoutContent() {
                   placeholder="e.g. Vegetarian breakfast, child car seat needed..."
                   value={specialRequests}
                   onChange={(e) => setSpecialRequests(e.target.value)}
+                  maxLength={500}
                   className="w-full text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
                 />
               </div>
             </div>
 
-            {/* Step 3: Flexible Payment Method */}
+            {/* Step 3: Payment Method */}
+            {/*
+              📚 PAYMENT OPTIONS EXPLAINED:
+              - ARRIVAL: No online payment. User pays the driver in cash (USD or IDR).
+                         We just record the booking in our database.
+              - PAYPAL:  User is redirected to PayPal's website to pay.
+                         Money flows: PayPal account → Bali Mesari's PayPal → bank.
+              - WISE:    User is redirected to Wise's website to make a bank transfer.
+                         Great for international customers. Lower fees than PayPal.
+            */}
             <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
               <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2 pb-3 border-b border-gray-100">
                 <Lock className="w-4 h-4 text-emerald-700" />
@@ -220,6 +432,8 @@ function CheckoutContent() {
               </h3>
 
               <div className="space-y-3">
+                
+                {/* Option A: Pay on Arrival */}
                 <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
                   paymentMethod === 'arrival' ? 'border-emerald-700 bg-emerald-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
                 }`}>
@@ -239,34 +453,98 @@ function CheckoutContent() {
                   <span className="text-[10px] font-extrabold bg-amber-400 text-emerald-950 px-2 py-0.5 rounded-md">Popular</span>
                 </label>
 
+                {/* Option B: PayPal */}
                 <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
-                  paymentMethod === 'card' ? 'border-emerald-700 bg-emerald-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
+                  paymentMethod === 'paypal' ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
                 }`}>
                   <div className="flex items-center gap-3">
                     <input 
                       type="radio" 
                       name="payment"
-                      checked={paymentMethod === 'card'}
-                      onChange={() => setPaymentMethod('card')}
-                      className="accent-emerald-700"
+                      checked={paymentMethod === 'paypal'}
+                      onChange={() => setPaymentMethod('paypal')}
+                      className="accent-blue-600"
                     />
                     <div>
-                      <span className="text-xs font-extrabold text-gray-900 block">Credit / Debit Card (Stripe)</span>
-                      <span className="text-[11px] text-gray-500">Visa, Mastercard, American Express</span>
+                      <span className="text-xs font-extrabold text-gray-900 block flex items-center gap-2">
+                        Pay with PayPal
+                      </span>
+                      <span className="text-[11px] text-gray-500">Secure online payment — Visa, Mastercard, PayPal balance</span>
                     </div>
                   </div>
-                  <CreditCard className="w-4 h-4 text-gray-400" />
+                  {/* PayPal blue P logo */}
+                  <div className="w-8 h-8 rounded-lg bg-[#003087] flex items-center justify-center">
+                    <span className="text-white font-extrabold text-sm">P</span>
+                  </div>
                 </label>
+
+                {/* Option C: Wise */}
+                <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
+                  paymentMethod === 'wise' ? 'border-green-500 bg-green-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <input 
+                      type="radio" 
+                      name="payment"
+                      checked={paymentMethod === 'wise'}
+                      onChange={() => setPaymentMethod('wise')}
+                      className="accent-green-600"
+                    />
+                    <div>
+                      <span className="text-xs font-extrabold text-gray-900 block">Pay with Wise (Bank Transfer)</span>
+                      <span className="text-[11px] text-gray-500">Best for AUD, EUR, GBP → IDR. Mid-market rates, low fees.</span>
+                    </div>
+                  </div>
+                  {/* Wise logo — green */}
+                  <div className="w-8 h-8 rounded-lg bg-[#9fe870] flex items-center justify-center">
+                    <span className="text-[#163300] font-extrabold text-xs">W</span>
+                  </div>
+                </label>
+
               </div>
+
+              {/* Payment info by method */}
+              {paymentMethod === 'paypal' && (
+                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-[11px] text-blue-800">
+                  <p className="font-bold mb-1">🔒 Secure PayPal Payment</p>
+                  <p>You'll be redirected to PayPal's secure site to complete payment. Your financial details are never shared with us.</p>
+                </div>
+              )}
+              {paymentMethod === 'wise' && (
+                <div className="bg-green-50 border border-green-100 rounded-xl p-3 text-[11px] text-green-800">
+                  <p className="font-bold mb-1">💚 Wise International Transfer</p>
+                  <p>You'll be redirected to Wise to complete a bank transfer. Best rates for international payments. After sending, please WhatsApp us your confirmation screenshot.</p>
+                </div>
+              )}
             </div>
+
+            {/* Form Error */}
+            {formError && (
+              <div className="flex items-start gap-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <span className="text-red-500 text-base">⚠️</span>
+                <span>{formError}</span>
+              </div>
+            )}
 
             {/* Submit Button */}
             <button
               type="submit"
               disabled={submitting}
-              className="w-full py-4 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-emerald-900/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+              className="w-full py-4 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-emerald-900/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {submitting ? 'Processing Confirmation...' : `Confirm & Reserve ($${totalPrice})`}
+              {submitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  {paymentMethod === 'paypal' ? 'Redirecting to PayPal...' : paymentMethod === 'wise' ? 'Generating Wise link...' : 'Processing...'}
+                </>
+              ) : (
+                <>
+                  {paymentMethod === 'paypal' ? '🔒 Pay with PayPal — ' : paymentMethod === 'wise' ? '💚 Pay with Wise — ' : `✅ Confirm & Reserve — `}
+                  {/* Show price in user's selected currency */}
+                  {format(totalPrice)}
+                  {currency === 'USD' && <span className="font-normal text-emerald-300 text-[11px]">≈ {idrFormatted}</span>}
+                </>
+              )}
             </button>
 
           </form>
@@ -293,13 +571,30 @@ function CheckoutContent() {
                 </div>
                 <div className="flex justify-between">
                   <span>Rate:</span>
-                  <span>${pricePerPerson} × {participants}</span>
+                  {/* 📚 format() converts USD price to user's selected currency */}
+                  <span>{format(pricePerPerson)} × {participants}</span>
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-gray-100 flex justify-between items-baseline">
-                <span className="text-xs font-extrabold text-gray-900">Total Payable</span>
-                <span className="text-2xl font-extrabold text-emerald-900">${totalPrice}</span>
+              <div className="pt-3 border-t border-gray-100">
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="text-xs font-extrabold text-gray-900">Total Payable</span>
+                  <span className="text-2xl font-extrabold text-emerald-900">
+                    {format(totalPrice)}
+                  </span>
+                </div>
+                {/* Always show both currencies for clarity */}
+                <div className="text-right">
+                  <span className="text-[10px] text-gray-400 font-medium">
+                    {currency === 'USD' 
+                      ? `≈ ${idrFormatted} IDR`
+                      : `= $${totalPrice} USD`
+                    }
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Live rate: 1 USD = Rp {rate.toLocaleString('id-ID')}
+                </p>
               </div>
 
               <div className="p-3 rounded-2xl bg-amber-50 border border-amber-100 text-[11px] text-amber-900 font-medium space-y-1">
