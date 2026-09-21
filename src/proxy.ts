@@ -122,7 +122,7 @@ function buildCSP(): string {
 
 // ─── Middleware Function ──────────────────────────────────────────────────────
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Get the real IP address (Vercel puts it in x-forwarded-for)
