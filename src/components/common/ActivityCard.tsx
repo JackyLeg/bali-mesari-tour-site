@@ -145,26 +145,25 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
         </div>
 
         {/* Price Footer */}
-        <div className="pt-3 border-t border-gray-100 flex items-center justify-between mt-2">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-gray-400 block">From</span>
-            <div className="flex items-baseline gap-1.5">
-              {activity.priceOriginal && (
-                <span className="text-xs text-gray-400 line-through font-medium">
-                  {/* 📚 format() converts the USD price to the active currency */}
-                  {format(activity.priceOriginal)}
-                </span>
-              )}
-              <span className="text-lg font-extrabold text-emerald-900">
+        <div className="pt-3 border-t border-gray-100 flex items-end justify-between gap-2 mt-2">
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] uppercase tracking-wider font-bold text-gray-400 block">From</span>
+            {activity.priceOriginal && activity.priceOriginal > activity.priceDiscounted ? (
+              <span className="text-[11px] text-gray-400 line-through font-medium block leading-tight mb-0.5">
+                {format(activity.priceOriginal)}
+              </span>
+            ) : null}
+            <div className="flex items-baseline gap-1 flex-wrap">
+              <span className="text-base sm:text-lg font-extrabold text-emerald-900 tracking-tight whitespace-nowrap">
                 {format(activity.priceDiscounted)}
               </span>
-              <span className="text-[11px] text-gray-500">/ person</span>
+              <span className="text-[11px] text-gray-500 whitespace-nowrap">/ person</span>
             </div>
           </div>
 
           <Link
             href={`/activities/${activity.slug}`}
-            className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm group-hover:shadow"
+            className="shrink-0 px-3.5 py-2 bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm group-hover:shadow whitespace-nowrap"
           >
             Book Now
           </Link>

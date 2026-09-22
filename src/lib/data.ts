@@ -643,6 +643,21 @@ export async function getActivities(params?: {
     }
   }
 
+  // Filter out deleted activities (such as removed demo tours or items deleted in admin)
+  let deletedSlugs: string[] = ['fslfksk-f'];
+  if (typeof window !== 'undefined') {
+    try {
+      const storedDeleted = localStorage.getItem('deleted_activity_slugs');
+      if (storedDeleted) {
+        const parsed = JSON.parse(storedDeleted);
+        if (Array.isArray(parsed)) {
+          deletedSlugs = Array.from(new Set([...deletedSlugs, ...parsed]));
+        }
+      }
+    } catch (_) {}
+  }
+  list = list.filter((a) => !deletedSlugs.includes(a.slug));
+
   if (params?.query) {
     const q = params.query.toLowerCase();
     list = list.filter(
@@ -729,9 +744,91 @@ export async function getReviewsForActivity(activityId: string): Promise<Review[
 }
 
 export async function getBlogPosts(): Promise<BlogPost[]> {
-  return INITIAL_BLOG_POSTS;
+  let list = [...INITIAL_BLOG_POSTS];
+
+  // Load from Supabase if table exists
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('blogs')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data && data.length > 0) {
+        const mapped: BlogPost[] = data.map((b: any) => ({
+          id: b.id,
+          slug: b.slug,
+          title: b.title,
+          excerpt: b.excerpt || '',
+          content: b.content || '',
+          author: b.author || 'Bali Mesari Team',
+          publishedDate: b.published_date || new Date().toISOString().split('T')[0],
+          readTime: b.read_time || '5 min read',
+          imageUrl: b.image_url || 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80',
+          category: b.category || 'Travel Tips',
+          relatedActivitySlugs: b.related_activity_slugs || [],
+        }));
+        const dbSlugs = new Set(mapped.map((m) => m.slug));
+        list = [...mapped, ...list.filter((p) => !dbSlugs.has(p.slug))];
+      }
+    } catch (_) {}
+  }
+
+  // Load from localStorage
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('custom_blogs');
+      if (stored) {
+        const custom: BlogPost[] = JSON.parse(stored);
+        if (Array.isArray(custom) && custom.length > 0) {
+          const customSlugs = new Set(custom.map((c) => c.slug));
+          list = [...custom, ...list.filter((p) => !customSlugs.has(p.slug))];
+        }
+      }
+    } catch (_) {}
+
+    // Filter out deleted posts
+    try {
+      const deleted = localStorage.getItem('deleted_blog_slugs');
+      if (deleted) {
+        const deletedSlugs: string[] = JSON.parse(deleted);
+        if (Array.isArray(deletedSlugs)) {
+          list = list.filter((p) => !deletedSlugs.includes(p.slug));
+        }
+      }
+    } catch (_) {}
+  }
+
+  return list;
 }
 
 export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
-  return INITIAL_BLOG_POSTS.find((p) => p.slug === slug) || null;
+  const all = await getBlogPosts();
+  return all.find((p) => p.slug === slug) || null;
+}
+
+export function saveBlogPostsLocal(posts: BlogPost[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const initialSlugs = new Set(INITIAL_BLOG_POSTS.map((p) => p.slug));
+    const custom = posts.filter((p) => !initialSlugs.has(p.slug));
+    localStorage.setItem('custom_blogs', JSON.stringify(custom));
+  } catch (_) {}
+}
+
+export function deleteBlogPostLocal(slug: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const deleted = localStorage.getItem('deleted_blog_slugs');
+    const list: string[] = deleted ? JSON.parse(deleted) : [];
+    if (!list.includes(slug)) {
+      list.push(slug);
+      localStorage.setItem('deleted_blog_slugs', JSON.stringify(list));
+    }
+    // Also remove from custom_blogs
+    const stored = localStorage.getItem('custom_blogs');
+    if (stored) {
+      const custom: BlogPost[] = JSON.parse(stored);
+      localStorage.setItem('custom_blogs', JSON.stringify(custom.filter((p) => p.slug !== slug)));
+    }
+  } catch (_) {}
 }

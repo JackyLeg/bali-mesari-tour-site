@@ -2,17 +2,19 @@
  * 📚 HOW THIS WORKS — Header Component
  *
  * The Header uses useCurrency() from CurrencyContext.
- * When the user picks a currency from the dropdown here, the context
- * updates globally — so ALL price displays across the site
+ * When the user picks a currency from the dropdown or mobile toggle,
+ * the context updates globally — so ALL price displays across the site
  * (activity cards, checkout, booking summary) update simultaneously.
  *
- * This is the power of React Context: one state, shared everywhere.
+ * In addition, usePathname() tracks the active page to visually emphasize
+ * the current location in both desktop and mobile navigation.
  */
 
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { 
   Compass, 
   MapPin, 
@@ -30,10 +32,8 @@ export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currencyDropdownOpen, setCurrencyDropdownOpen] = useState(false);
+  const pathname = usePathname();
 
-  // 📚 Instead of local state, we use the global CurrencyContext.
-  // currency = current code ('USD' or 'IDR')
-  // setCurrency = function to change currency globally
   const { currency, setCurrency } = useCurrency();
 
   useEffect(() => {
@@ -44,6 +44,11 @@ export default function Header() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Helper to determine if link is active
+  const isLinkActive = (path: string) => {
+    if (path === '/') return pathname === '/';
+    return pathname.startsWith(path);
+  };
 
   return (
     <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
@@ -68,24 +73,38 @@ export default function Header() {
           </Link>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center gap-7">
+          <nav className="hidden md:flex items-center gap-3 lg:gap-5">
             <Link 
               href="/activities" 
-              className={`text-sm font-semibold transition-colors hover:text-amber-500 ${isScrolled ? 'text-gray-700' : 'text-white/90'}`}
+              className={`text-sm font-semibold transition-all px-3 py-1.5 rounded-full ${
+                isLinkActive('/activities') && !pathname.includes('badge=Special')
+                  ? isScrolled 
+                    ? 'bg-emerald-50 text-emerald-800 font-extrabold shadow-xs ring-1 ring-emerald-200' 
+                    : 'bg-white/20 text-white font-extrabold backdrop-blur-md ring-1 ring-white/30'
+                  : isScrolled ? 'text-gray-700 hover:text-amber-600' : 'text-white/90 hover:text-amber-300'
+              }`}
             >
               Explore Tours
             </Link>
 
             <Link 
               href="/destinations" 
-              className={`text-sm font-semibold transition-colors hover:text-amber-500 ${isScrolled ? 'text-gray-700' : 'text-white/90'}`}
+              className={`text-sm font-semibold transition-all px-3 py-1.5 rounded-full ${
+                isLinkActive('/destinations')
+                  ? isScrolled 
+                    ? 'bg-emerald-50 text-emerald-800 font-extrabold shadow-xs ring-1 ring-emerald-200' 
+                    : 'bg-white/20 text-white font-extrabold backdrop-blur-md ring-1 ring-white/30'
+                  : isScrolled ? 'text-gray-700 hover:text-amber-600' : 'text-white/90 hover:text-amber-300'
+              }`}
             >
               Destinations
             </Link>
 
             <Link 
               href="/activities?badge=Special+Deal" 
-              className={`text-sm font-semibold flex items-center gap-1.5 transition-colors hover:text-amber-500 ${isScrolled ? 'text-emerald-700' : 'text-amber-300'}`}
+              className={`text-sm font-semibold flex items-center gap-1.5 transition-all px-3 py-1.5 rounded-full ${
+                isScrolled ? 'text-emerald-700 hover:text-amber-600' : 'text-amber-300 hover:text-amber-200'
+              }`}
             >
               <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
               Special Deals
@@ -93,12 +112,16 @@ export default function Header() {
 
             <Link 
               href="/blog" 
-              className={`text-sm font-semibold transition-colors hover:text-amber-500 ${isScrolled ? 'text-gray-700' : 'text-white/90'}`}
+              className={`text-sm font-semibold transition-all px-3 py-1.5 rounded-full ${
+                isLinkActive('/blog')
+                  ? isScrolled 
+                    ? 'bg-emerald-50 text-emerald-800 font-extrabold shadow-xs ring-1 ring-emerald-200' 
+                    : 'bg-white/20 text-white font-extrabold backdrop-blur-md ring-1 ring-white/30'
+                  : isScrolled ? 'text-gray-700 hover:text-amber-600' : 'text-white/90 hover:text-amber-300'
+              }`}
             >
               Travel Guide
             </Link>
-
-
           </nav>
 
           {/* Right Action Buttons */}
@@ -118,7 +141,6 @@ export default function Header() {
 
               {currencyDropdownOpen && (
                 <div className="absolute right-0 mt-2 w-36 bg-white rounded-xl shadow-xl border border-gray-100 py-1 text-xs text-gray-800 z-50">
-                  {/* 📚 Only USD and IDR are supported — they're wired to real conversion */}
                   {(['USD', 'IDR'] as const).map((curr) => (
                     <button
                       key={curr}
@@ -128,12 +150,12 @@ export default function Header() {
                       }}
                       className={`w-full text-left px-3 py-2 hover:bg-emerald-50 hover:text-emerald-700 flex items-center justify-between ${currency === curr ? 'font-bold text-emerald-700 bg-emerald-50/50' : ''}`}
                     >
-                      <span>{curr === 'USD' ? '🇺🇸 USD' : '🇮🇩 IDR'}</span>
+                      <span>{curr === 'USD' ? '🇺🇸 USD ($)' : '🇮🇩 IDR (Rp)'}</span>
                       {currency === curr && <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md font-bold">Active</span>}
                     </button>
                   ))}
                   <div className="px-3 py-1.5 border-t border-gray-100 text-[10px] text-gray-400">
-                    Live exchange rate
+                    Auto currency conversion
                   </div>
                 </div>
               )}
@@ -151,8 +173,22 @@ export default function Header() {
             </a>
           </div>
 
-          {/* Mobile Hamburger Button */}
+          {/* Mobile Right Controls: Currency Quick Toggle + Search + Hamburger */}
           <div className="flex lg:hidden items-center gap-2">
+            {/* Quick Currency Switcher on Mobile Bar */}
+            <button
+              onClick={() => setCurrency(currency === 'USD' ? 'IDR' : 'USD')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all border ${
+                isScrolled 
+                  ? 'border-gray-200 bg-gray-50 text-emerald-900 shadow-xs' 
+                  : 'border-white/30 bg-black/30 text-white backdrop-blur-md'
+              }`}
+              title="Switch currency USD / IDR"
+            >
+              <Globe className="w-3 h-3 text-amber-400" />
+              <span>{currency === 'USD' ? '$ USD' : 'Rp IDR'}</span>
+            </button>
+
             <Link 
               href="/activities"
               className={`p-2 rounded-lg ${isScrolled ? 'text-gray-700' : 'text-white'}`}
@@ -162,7 +198,6 @@ export default function Header() {
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className={`p-2 rounded-lg ${isScrolled ? 'text-gray-700' : 'text-white'}`}
-
             >
               {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -174,11 +209,44 @@ export default function Header() {
       {/* Mobile Menu Drawer */}
       {mobileMenuOpen && (
         <div className="lg:hidden bg-white border-b border-gray-100 shadow-xl px-4 pt-3 pb-6 text-gray-800 animate-in slide-in-from-top-2 duration-200">
-          <nav className="flex flex-col gap-3">
+          <nav className="flex flex-col gap-2">
+            
+            {/* Mobile Currency Switcher */}
+            <div className="flex items-center justify-between p-2.5 bg-emerald-50/70 rounded-xl border border-emerald-100 mb-2">
+              <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-emerald-700" />
+                Display Currency:
+              </span>
+              <div className="flex items-center gap-1 bg-white p-0.5 rounded-lg border border-emerald-200 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setCurrency('USD')}
+                  className={`px-3 py-1 rounded-md text-xs font-extrabold transition-colors ${
+                    currency === 'USD' ? 'bg-emerald-700 text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  🇺🇸 USD ($)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrency('IDR')}
+                  className={`px-3 py-1 rounded-md text-xs font-extrabold transition-colors ${
+                    currency === 'IDR' ? 'bg-emerald-700 text-white shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  🇮🇩 IDR (Rp)
+                </button>
+              </div>
+            </div>
+
             <Link 
               href="/activities" 
               onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-50 text-gray-800 flex items-center gap-2"
+              className={`px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 transition-colors ${
+                isLinkActive('/activities') && !pathname.includes('badge=Special')
+                  ? 'bg-emerald-100 text-emerald-950 font-extrabold border-l-4 border-emerald-700'
+                  : 'hover:bg-emerald-50 text-gray-800'
+              }`}
             >
               <Compass className="w-4 h-4 text-emerald-600" />
               All Tours & Activities
@@ -187,7 +255,11 @@ export default function Header() {
             <Link 
               href="/destinations" 
               onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-50 text-gray-800 flex items-center gap-2"
+              className={`px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 transition-colors ${
+                isLinkActive('/destinations')
+                  ? 'bg-emerald-100 text-emerald-950 font-extrabold border-l-4 border-emerald-700'
+                  : 'hover:bg-emerald-50 text-gray-800'
+              }`}
             >
               <MapPin className="w-4 h-4 text-emerald-600" />
               Bali Destinations
@@ -196,7 +268,7 @@ export default function Header() {
             <Link 
               href="/activities?badge=Special+Deal" 
               onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-50 text-emerald-700 flex items-center gap-2"
+              className="px-3 py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-50 text-emerald-800 flex items-center gap-2"
             >
               <Sparkles className="w-4 h-4 text-amber-500" />
               Special Deals & Offers
@@ -205,14 +277,17 @@ export default function Header() {
             <Link 
               href="/blog" 
               onClick={() => setMobileMenuOpen(false)}
-              className="px-3 py-2.5 rounded-lg text-sm font-semibold hover:bg-emerald-50 text-gray-800 flex items-center gap-2"
+              className={`px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 transition-colors ${
+                isLinkActive('/blog')
+                  ? 'bg-emerald-100 text-emerald-950 font-extrabold border-l-4 border-emerald-700'
+                  : 'hover:bg-emerald-50 text-gray-800'
+              }`}
             >
               <Globe className="w-4 h-4 text-emerald-600" />
               Travel Guides & Tips
             </Link>
 
-
-            <div className="pt-3 border-t border-gray-100 flex flex-col gap-2">
+            <div className="pt-3 border-t border-gray-100 flex flex-col gap-2 mt-1">
               <a 
                 href="https://wa.me/6285128016716?text=Hello%20Bali%20Mesari%20Tour" 
                 target="_blank"

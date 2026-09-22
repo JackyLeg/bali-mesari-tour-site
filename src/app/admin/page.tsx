@@ -27,8 +27,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
-import { Activity } from '@/types';
-import { INITIAL_ACTIVITIES, getActivities } from '@/lib/data';
+import { Activity, BlogPost } from '@/types';
+import { INITIAL_ACTIVITIES, getActivities, getBlogPosts, saveBlogPostsLocal, deleteBlogPostLocal } from '@/lib/data';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { verifyPassword, checkRateLimit, resetRateLimit, sanitizeEmail, sanitizeInput } from '@/lib/security';
 import {
@@ -59,6 +59,13 @@ import {
   Copy,
   Check,
   PhoneCall,
+  BookOpen,
+  Search,
+  Filter,
+  ExternalLink,
+  Calendar,
+  Send,
+  Share2,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -374,9 +381,10 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
 
   const handleFiles = (files: FileList | null) => {
-    if (!files) return;
+    if (!files || files.length === 0) return;
     setError('');
     const remaining = MAX_IMAGES - images.length;
     if (remaining <= 0) { setError(`Maximum ${MAX_IMAGES} images allowed.`); return; }
@@ -387,7 +395,11 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
     const pending: string[] = [];
     let done = 0;
     toProcess.forEach((file, i) => {
-      if (!file.type.startsWith('image/')) { setError('Only image files accepted (jpg, png, webp, gif).'); done++; return; }
+      if (!file.type.startsWith('image/')) { 
+        setError('Only image files accepted (jpg, png, webp, gif).'); 
+        done++; 
+        return; 
+      }
       const reader = new FileReader();
       reader.onload = (ev) => {
         pending[i] = ev.target?.result as string;
@@ -400,74 +412,172 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
     });
   };
 
+  const addImageUrl = () => {
+    if (!urlInput.trim()) return;
+    if (!urlInput.startsWith('http://') && !urlInput.startsWith('https://')) {
+      setError('Please provide a valid image URL starting with http:// or https://');
+      return;
+    }
+    if (images.length >= MAX_IMAGES) {
+      setError(`Maximum ${MAX_IMAGES} images allowed.`);
+      return;
+    }
+    setError('');
+    onChange([...images, urlInput.trim()]);
+    setUrlInput('');
+  };
+
   const removeImage = (idx: number) => {
     onChange(images.filter((_, i) => i !== idx));
     // If removed image was cover, shift cover to 0
     if (idx === coverIndex && images.length > 1) onSetCover(0);
   };
 
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const handleDragOver = (e: React.DragEvent) => { 
+    e.preventDefault(); 
+    e.stopPropagation();
+    setIsDragging(true); 
+  };
+  const handleDragLeave = (e: React.DragEvent) => { 
+    e.preventDefault(); 
+    e.stopPropagation();
+    setIsDragging(false); 
+  };
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
+    if (e.dataTransfer && e.dataTransfer.files) {
+      handleFiles(e.dataTransfer.files);
+    }
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* Photo upload dropzone and button */}
+      <div 
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={`border-2 border-dashed rounded-2xl p-5 text-center transition-all ${
+          isDragging 
+            ? 'border-emerald-600 bg-emerald-50/80 scale-[1.01]' 
+            : 'border-gray-200 bg-white hover:border-emerald-400 hover:bg-gray-50/60'
+        }`}
+      >
+        <div className="flex flex-col items-center justify-center gap-2">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-100/70 text-emerald-800 flex items-center justify-center shadow-xs">
+            <Upload className="w-6 h-6 animate-bounce" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-800">
+              Drag & Drop your photos here, or
+            </p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              Supports multiple files (JPG, PNG, WebP) • Up to {MAX_IMAGES} photos
+            </p>
+          </div>
+
+          {/* Prominent File Manager Button */}
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="mt-1 px-4 py-2 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <ImageIcon className="w-4 h-4" />
+            <span>📁 Browse Files / Open File Manager</span>
+          </button>
+        </div>
+
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept={ACCEPTED_TYPES}
+          className="hidden"
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+      </div>
+
+      {/* Alternative: Add Image by URL */}
+      <div className="flex items-center gap-2">
+        <input
+          type="url"
+          placeholder="Or paste an image web URL (e.g. https://...)"
+          value={urlInput}
+          onChange={(e) => setUrlInput(e.target.value)}
+          className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 placeholder:text-gray-400 outline-none focus:border-emerald-600"
+        />
+        <button
+          type="button"
+          onClick={addImageUrl}
+          className="px-3.5 py-2 bg-gray-100 hover:bg-emerald-100 hover:text-emerald-900 text-gray-700 text-xs font-bold rounded-xl transition-colors cursor-pointer shrink-0"
+        >
+          Add URL
+        </button>
+      </div>
+
+      {/* Error alert */}
+      {error && (
+        <p className="text-xs font-semibold text-red-500 flex items-center gap-1">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>{error}</span>
+        </p>
+      )}
 
       {/* Photo thumbnails grid */}
       {images.length > 0 && (
-        <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
-          {images.map((src, idx) => (
-            <div
-              key={idx}
-              className={`relative aspect-square rounded-xl overflow-hidden border-2 group ${
-                idx === coverIndex ? 'border-amber-400 shadow-md shadow-amber-100' : 'border-gray-200'
-              }`}
-            >
-              <img src={src} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold text-gray-500">
+              Uploaded Photos ({images.length} / {MAX_IMAGES})
+            </span>
+            <span className="text-[10px] text-gray-400">
+              Click ★ Cover to choose the main listing thumbnail
+            </span>
+          </div>
 
-              {/* Gold ★ Cover badge on active cover */}
-              {idx === coverIndex && (
-                <span className="absolute bottom-1 left-1 text-[9px] font-extrabold bg-amber-400 text-emerald-950 px-1.5 py-0.5 rounded-md leading-none">
-                  ★ Cover
-                </span>
-              )}
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
+            {images.map((src, idx) => (
+              <div
+                key={idx}
+                className={`relative aspect-square rounded-xl overflow-hidden border-2 group shadow-2xs ${
+                  idx === coverIndex ? 'border-amber-400 ring-2 ring-amber-400/30 shadow-md' : 'border-gray-200'
+                }`}
+              >
+                <img src={src} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
 
-              {/* "Set as Cover" hover button on non-cover images */}
-              {idx !== coverIndex && (
+                {/* Gold ★ Cover badge on active cover */}
+                {idx === coverIndex ? (
+                  <span className="absolute bottom-1.5 left-1.5 text-[9px] font-extrabold bg-amber-400 text-emerald-950 px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1 leading-none">
+                    ★ Cover
+                  </span>
+                ) : (
+                  /* "Set as Cover" button */
+                  <button
+                    type="button"
+                    onClick={() => onSetCover(idx)}
+                    title="Set as cover photo"
+                    className="absolute bottom-1.5 left-1.5 text-[9px] font-bold bg-black/70 hover:bg-amber-400 hover:text-emerald-950 text-white px-2 py-0.5 rounded-md opacity-80 sm:opacity-0 group-hover:opacity-100 transition-all shadow-xs leading-none cursor-pointer"
+                  >
+                    ★ Set Cover
+                  </button>
+                )}
+
+                {/* Delete photo button */}
                 <button
                   type="button"
-                  onClick={() => onSetCover(idx)}
-                  title="Set as cover photo"
-                  className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/60 text-white px-1.5 py-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-amber-400 hover:text-emerald-950 whitespace-nowrap leading-none"
+                  onClick={() => removeImage(idx)}
+                  title="Remove this photo"
+                  className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center opacity-90 sm:opacity-0 group-hover:opacity-100 transition-opacity shadow-sm cursor-pointer"
                 >
-                  ★ Cover
+                  <X className="w-3.5 h-3.5" />
                 </button>
-              )}
-
-              {/* Delete button */}
-              <button
-                type="button"
-                onClick={() => removeImage(idx)}
-                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
-      {error && (
-        <p className="text-xs font-semibold text-red-500 flex items-center gap-1">
-          <AlertCircle className="w-3.5 h-3.5" />{error}
-        </p>
-      )}
-      <p className="text-[11px] text-gray-400 font-medium">{images.length} / {MAX_IMAGES} images uploaded</p>
-      <input ref={inputRef} type="file" multiple accept={ACCEPTED_TYPES} className="hidden"
-        onChange={(e) => handleFiles(e.target.files)} />
     </div>
   );
 }
@@ -991,16 +1101,35 @@ function AddTeamMemberModal({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'staff' | 'super_admin'>('staff');
-  const [tempPassword, setTempPassword] = useState(`Mesari_${Math.floor(1000 + Math.random() * 9000)}!`);
+  const [useEmailAsPassword, setUseEmailAsPassword] = useState(true);
+  const [tempPassword, setTempPassword] = useState('');
   const [copied, setCopied] = useState(false);
 
+  // Update tempPassword when email changes if useEmailAsPassword is true
+  const handleEmailChange = (newEmail: string) => {
+    setEmail(newEmail);
+    if (useEmailAsPassword) {
+      setTempPassword(newEmail);
+    }
+  };
+
+  const handleTogglePasswordMode = (useEmail: boolean) => {
+    setUseEmailAsPassword(useEmail);
+    if (useEmail) {
+      setTempPassword(email);
+    } else {
+      setTempPassword(`Mesari_${Math.floor(1000 + Math.random() * 9000)}!`);
+    }
+  };
+
   const generateNewPassword = () => {
+    setUseEmailAsPassword(false);
     setTempPassword(`Mesari_${Math.floor(1000 + Math.random() * 9000)}!`);
     setCopied(false);
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(tempPassword);
+    navigator.clipboard.writeText(tempPassword || email);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -1009,23 +1138,24 @@ function AddTeamMemberModal({
     e.preventDefault();
     if (!name || !email) return;
 
+    const finalPassword = (tempPassword.trim() || email.trim());
+
     const newMember: TeamMember = {
       id: `team-${Date.now()}`,
       name: name.trim(),
       email: email.trim(),
       role,
       status: 'active',
-      tempPassword,
+      tempPassword: finalPassword,
       createdAt: new Date().toISOString().split('T')[0],
     };
 
     onSave(newMember);
-    onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
-      <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-gray-100 relative">
+      <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-gray-100 relative max-h-[90vh] overflow-y-auto">
         <button onClick={onClose} className="absolute top-5 right-5 p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 cursor-pointer">
           <X className="w-5 h-5" />
         </button>
@@ -1036,7 +1166,7 @@ function AddTeamMemberModal({
           </div>
           <div>
             <h3 className="text-lg font-extrabold text-gray-900">Add Team Member</h3>
-            <p className="text-[11px] text-gray-500">Create access for operations staff or admin</p>
+            <p className="text-[11px] text-gray-500">Create access & send verification email with login credentials</p>
           </div>
         </div>
 
@@ -1060,8 +1190,8 @@ function AddTeamMemberModal({
               required
               placeholder="e.g. kadek@balimesari.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 text-gray-900 text-xs"
+              onChange={(e) => handleEmailChange(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 text-gray-900 text-xs font-semibold"
             />
           </div>
 
@@ -1077,28 +1207,41 @@ function AddTeamMemberModal({
             </select>
             <p className="text-[10px] text-gray-500 mt-1">
               {role === 'staff' 
-                ? '✓ Can view bookings, update status, and contact guests on WhatsApp. Cannot delete or edit tour prices.' 
-                : '✓ Full privileges: can add/delete tours, change pricing, and manage team accounts.'}
+                ? '✓ Can view bookings, update status, and contact guests on WhatsApp.' 
+                : '✓ Full privileges: can add/delete tours, manage blogs, and add staff.'}
             </p>
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1.5">
               <label className="font-bold text-gray-900">Temporary Password</label>
-              <button
-                type="button"
-                onClick={generateNewPassword}
-                className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Regenerate</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleTogglePasswordMode(!useEmailAsPassword)}
+                  className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                >
+                  {useEmailAsPassword ? 'Use Random Pass' : 'Use Email as Pass'}
+                </button>
+                {!useEmailAsPassword && (
+                  <button
+                    type="button"
+                    onClick={generateNewPassword}
+                    className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
+
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                readOnly
-                value={tempPassword}
+                readOnly={useEmailAsPassword}
+                value={useEmailAsPassword ? (email || 'their-email@domain.com') : tempPassword}
+                onChange={(e) => setTempPassword(e.target.value)}
+                placeholder="Temporary password"
                 className="w-full bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 font-mono text-xs text-amber-900 font-bold outline-none"
               />
               <button
@@ -1112,8 +1255,17 @@ function AddTeamMemberModal({
               </button>
             </div>
             <p className="text-[10px] text-gray-500 mt-1">
-              Share this temporary password with the member. They can change it in their Settings once logged in.
+              {useEmailAsPassword 
+                ? '✓ Password is set to their email address as requested. Member can change it once logged in.'
+                : 'Custom temporary password assigned.'}
             </p>
+          </div>
+
+          <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-[11px] text-emerald-800 flex items-start gap-2">
+            <Mail className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+            <span>
+              A verification email prompt will automatically launch after adding to dispatch login details to <strong>{email || 'their email'}</strong>.
+            </span>
           </div>
 
           <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
@@ -1126,9 +1278,10 @@ function AddTeamMemberModal({
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-900/20 transition-all cursor-pointer"
+              className="px-5 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-900/20 transition-all cursor-pointer flex items-center gap-1.5"
             >
-              Add Member
+              <UserPlus className="w-4 h-4" />
+              <span>Add & Setup Verification</span>
             </button>
           </div>
         </form>
@@ -1137,7 +1290,493 @@ function AddTeamMemberModal({
   );
 }
 
-// ─── Delete Confirm ───────────────────────────────────────────────────────────
+// ─── Team Member Verification Email Modal ──────────────────────────────────────
+
+function InviteSentModal({
+  member,
+  onClose,
+}: {
+  member: TeamMember;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [apiSending, setApiSending] = useState(false);
+  const [apiSentSuccess, setApiSentSuccess] = useState(false);
+
+  const adminUrl = typeof window !== 'undefined' ? `${window.location.origin}/admin` : 'https://balimesari.com/admin';
+  const tempPassword = member.tempPassword || member.email;
+
+  const emailSubject = encodeURIComponent('Welcome to Bali Mesari Tour Team — Your Staff Login Credentials');
+  const emailBody = encodeURIComponent(
+`Dear ${member.name},
+
+You have been granted access to the Bali Mesari Tour management portal as ${member.role === 'super_admin' ? 'Super Administrator' : 'Operations Staff'}.
+
+Your staff login credentials:
+------------------------------------------
+Portal URL: ${adminUrl}
+Login Email: ${member.email}
+Temporary Password: ${tempPassword}
+------------------------------------------
+
+Important steps:
+1. Log in at ${adminUrl}
+2. Go to "Settings & Password" in the top bar to set a private password.
+3. For immediate assistance, reach out to the admin team.
+
+Best regards,
+Bali Mesari Tour Administration`
+  );
+
+  const mailtoUrl = `mailto:${member.email}?subject=${emailSubject}&body=${emailBody}`;
+
+  const copyInviteText = () => {
+    const rawText = 
+`Dear ${member.name},
+You have been added to the Bali Mesari Tour admin team.
+Login URL: ${adminUrl}
+Email: ${member.email}
+Temporary Password: ${tempPassword}
+Please sign in and change your password in Settings.`;
+    navigator.clipboard.writeText(rawText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2500);
+  };
+
+  const sendViaApi = async () => {
+    setApiSending(true);
+    try {
+      const res = await fetch('/api/admin/send-invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: member.name,
+          email: member.email,
+          role: member.role,
+          tempPassword,
+          loginUrl: adminUrl,
+        }),
+      });
+      if (res.ok) {
+        setApiSentSuccess(true);
+      }
+    } catch (_) {}
+    setApiSending(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+      <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-gray-100 relative">
+        <button onClick={onClose} className="absolute top-5 right-5 p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 cursor-pointer">
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center mb-4 shadow-xs">
+          <Mail className="w-6 h-6" />
+        </div>
+
+        <h3 className="text-xl font-extrabold text-gray-900 mb-1">
+          Send Verification Email to {member.name}
+        </h3>
+        <p className="text-xs text-gray-500 mb-5">
+          Member created successfully! Now send their verification email containing their temporary password.
+        </p>
+
+        {/* Credentials summary card */}
+        <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-2 mb-5 text-xs">
+          <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
+            <span className="text-gray-500 font-medium">Recipient:</span>
+            <span className="font-bold text-gray-900">{member.name} ({member.email})</span>
+          </div>
+          <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
+            <span className="text-gray-500 font-medium">Role:</span>
+            <span className="font-bold text-emerald-800 capitalize">{member.role === 'super_admin' ? 'Super Admin' : 'Operations Staff'}</span>
+          </div>
+          <div className="flex justify-between items-center py-1 border-b border-gray-200/60">
+            <span className="text-gray-500 font-medium">Temporary Password:</span>
+            <span className="font-mono font-extrabold text-amber-900 bg-amber-100/70 px-2 py-0.5 rounded-md">{tempPassword}</span>
+          </div>
+          <div className="flex justify-between items-center py-1">
+            <span className="text-gray-500 font-medium">Portal URL:</span>
+            <span className="font-mono text-[11px] text-gray-700">{adminUrl}</span>
+          </div>
+        </div>
+
+        {apiSentSuccess && (
+          <div className="mb-4 p-3 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-2 border border-emerald-200">
+            <Check className="w-4 h-4 text-emerald-600" />
+            Verification email dispatched via system API!
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="space-y-2.5">
+          {/* Primary: Open Email App (mailto) */}
+          <a
+            href={mailtoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-3 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
+          >
+            <Send className="w-4 h-4" />
+            <span>Open Email Client & Send Verification Email</span>
+          </a>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={sendViaApi}
+              disabled={apiSending || apiSentSuccess}
+              className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>{apiSending ? 'Dispatching...' : apiSentSuccess ? 'Dispatched ✓' : 'Dispatch via System API'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={copyInviteText}
+              className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copied ? 'Copied Details' : 'Copy Credentials'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-5 pt-3 border-t border-gray-100 text-right">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs font-bold text-gray-500 hover:text-gray-800 cursor-pointer"
+          >
+            Done / Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Blog Form Modal (Create & Edit) ──────────────────────────────────────────
+
+const BLOG_CATEGORIES = ['Travel Tips', 'Destinations', 'Culture', 'Adventure', 'Food & Drink', 'Wellness'];
+
+function BlogFormModal({
+  mode,
+  initial,
+  activities,
+  onClose,
+  onSave,
+}: {
+  mode: 'create' | 'edit';
+  initial?: BlogPost;
+  activities: Activity[];
+  onClose: () => void;
+  onSave: (post: BlogPost) => void;
+}) {
+  const [title, setTitle] = useState(initial?.title || '');
+  const [slug, setSlug] = useState(initial?.slug || '');
+  const [excerpt, setExcerpt] = useState(initial?.excerpt || '');
+  const [content, setContent] = useState(initial?.content || '');
+  const [author, setAuthor] = useState(initial?.author || 'Bali Mesari Team');
+  const [publishedDate, setPublishedDate] = useState(initial?.publishedDate || new Date().toISOString().split('T')[0]);
+  const [readTime, setReadTime] = useState(initial?.readTime || '5 min read');
+  const [category, setCategory] = useState(initial?.category || 'Travel Tips');
+  const [imageUrl, setImageUrl] = useState(initial?.imageUrl || 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80');
+  const [relatedActivitySlugs, setRelatedActivitySlugs] = useState<string[]>(initial?.relatedActivitySlugs || []);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-slugify when title changes in create mode
+  const handleTitleChange = (val: string) => {
+    setTitle(val);
+    if (mode === 'create') {
+      const generated = val
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      setSlug(generated);
+    }
+  };
+
+  const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        setImageUrl(ev.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const toggleRelated = (actSlug: string) => {
+    if (relatedActivitySlugs.includes(actSlug)) {
+      setRelatedActivitySlugs(relatedActivitySlugs.filter((s) => s !== actSlug));
+    } else {
+      setRelatedActivitySlugs([...relatedActivitySlugs, actSlug]);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !slug.trim()) return;
+
+    const post: BlogPost = {
+      id: initial?.id || `blog-${Date.now()}`,
+      slug: slug.trim(),
+      title: title.trim(),
+      excerpt: excerpt.trim(),
+      content: content.trim(),
+      author: author.trim() || 'Bali Mesari Team',
+      publishedDate: publishedDate || new Date().toISOString().split('T')[0],
+      readTime: readTime.trim() || '5 min read',
+      category: category.trim() || 'Travel Tips',
+      imageUrl: imageUrl.trim(),
+      relatedActivitySlugs,
+    };
+
+    onSave(post);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+      <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-gray-100 relative max-h-[92vh] overflow-y-auto">
+        <button onClick={onClose} className="absolute top-5 right-5 p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700 cursor-pointer">
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="flex items-center gap-2.5 mb-6">
+          <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-800 flex items-center justify-center font-extrabold">
+            <BookOpen className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-extrabold text-gray-900">
+              {mode === 'create' ? 'Write New Blog Article' : 'Edit Blog Article'}
+            </h3>
+            <p className="text-[11px] text-gray-500">Publish guides, travel advice, and culture tips</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs font-medium text-gray-700">
+          <div>
+            <label className="font-bold text-gray-900 block mb-1">Article Title *</label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. 10 Essential Things to Know Before Hiking Mount Batur"
+              value={title}
+              onChange={(e) => handleTitleChange(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 font-bold outline-none focus:border-emerald-600"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">URL Slug *</label>
+              <input
+                type="text"
+                required
+                placeholder="mount-batur-hiking-guide"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs font-mono text-gray-800 outline-none focus:border-emerald-600"
+              />
+            </div>
+
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">Category *</label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-900 font-semibold outline-none focus:border-emerald-600 cursor-pointer"
+              >
+                {BLOG_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">Author</label>
+              <input
+                type="text"
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-900 outline-none focus:border-emerald-600 font-medium"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">Publish Date</label>
+              <input
+                type="date"
+                value={publishedDate}
+                onChange={(e) => setPublishedDate(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-900 outline-none focus:border-emerald-600 font-medium"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-gray-900 block mb-1">Read Time</label>
+              <input
+                type="text"
+                placeholder="5 min read"
+                value={readTime}
+                onChange={(e) => setReadTime(e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-900 outline-none focus:border-emerald-600 font-medium"
+              />
+            </div>
+          </div>
+
+          {/* Cover Photo */}
+          <div>
+            <label className="font-bold text-gray-900 block mb-1">Cover Image URL *</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                required
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder="https://images.unsplash.com/..."
+                className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-900 outline-none focus:border-emerald-600 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload File</span>
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleImageFile}
+            />
+            {imageUrl && (
+              <div className="mt-2 w-32 h-20 rounded-xl overflow-hidden border border-gray-200 shadow-2xs">
+                <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" />
+              </div>
+            )}
+          </div>
+
+          {/* Excerpt */}
+          <div>
+            <label className="font-bold text-gray-900 block mb-1">Summary / Excerpt (Short preview on card) *</label>
+            <textarea
+              rows={2}
+              required
+              placeholder="A quick 1-2 sentence teaser to hook readers..."
+              value={excerpt}
+              onChange={(e) => setExcerpt(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-900 outline-none focus:border-emerald-600 resize-none font-medium"
+            />
+          </div>
+
+          {/* Full Content */}
+          <div>
+            <label className="font-bold text-gray-900 block mb-1">Full Article Content *</label>
+            <textarea
+              rows={7}
+              required
+              placeholder="Write the full travel guide or story here..."
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 outline-none focus:border-emerald-600 resize-y font-normal leading-relaxed"
+            />
+          </div>
+
+          {/* Related Tours / Activities */}
+          {activities.length > 0 && (
+            <div>
+              <label className="font-bold text-gray-900 block mb-1.5">
+                Related Tours (Featured at bottom of article)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-2 bg-gray-50 rounded-xl border border-gray-200">
+                {activities.map((act) => {
+                  const isChecked = relatedActivitySlugs.includes(act.slug);
+                  return (
+                    <button
+                      key={act.slug}
+                      type="button"
+                      onClick={() => toggleRelated(act.slug)}
+                      className={`text-left p-2 rounded-lg text-xs font-semibold flex items-center justify-between border transition-all cursor-pointer ${
+                        isChecked 
+                          ? 'bg-emerald-100/70 border-emerald-300 text-emerald-950' 
+                          : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="truncate pr-2">{act.title}</span>
+                      {isChecked && <Check className="w-3.5 h-3.5 text-emerald-700 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>{mode === 'create' ? 'Publish Article' : 'Save Changes'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Delete Blog Modal ────────────────────────────────────────────────────────
+
+function DeleteBlogModal({
+  post,
+  onCancel,
+  onConfirm,
+}: {
+  post: BlogPost;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 font-sans">
+      <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-gray-100">
+        <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center mb-4">
+          <Trash2 className="w-6 h-6" />
+        </div>
+        <h3 className="text-lg font-extrabold text-gray-900 mb-1">Delete Article?</h3>
+        <p className="text-xs text-gray-500 mb-6">
+          <span className="font-bold text-gray-800">"{post.title}"</span> will be permanently deleted from the travel guide.
+        </p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl cursor-pointer">
+            Cancel
+          </button>
+          <button onClick={onConfirm} className="flex-1 py-2.5 text-xs font-extrabold text-white bg-red-500 hover:bg-red-600 rounded-xl shadow-sm cursor-pointer">
+            Yes, Delete It
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Delete Tour Confirm ──────────────────────────────────────────────────────
 
 function DeleteConfirmModal({ activity, onCancel, onConfirm }: { activity: Activity; onCancel: () => void; onConfirm: () => void }) {
   return (
@@ -1162,7 +1801,7 @@ function DeleteConfirmModal({ activity, onCancel, onConfirm }: { activity: Activ
 // ─── Admin Dashboard ──────────────────────────────────────────────────────────
 
 function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; currentUserEmail?: string }) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'activities' | 'bookings' | 'team' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'activities' | 'bookings' | 'blog' | 'team' | 'settings'>('overview');
   const [activitiesList, setActivitiesList] = useState<Activity[]>(INITIAL_ACTIVITIES);
   const [bookings, setBookings] = useState<Booking[]>(MOCK_BOOKINGS);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(() => {
@@ -1176,9 +1815,23 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
   });
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addTeamModalOpen, setAddTeamModalOpen] = useState(false);
+  const [inviteSentMember, setInviteSentMember] = useState<TeamMember | null>(null);
   const [editActivity, setEditActivity] = useState<Activity | null>(null);
   const [deleteActivity, setDeleteActivity] = useState<Activity | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+
+  // Booking Filtering State
+  const [bookingSearchQuery, setBookingSearchQuery] = useState('');
+  const [bookingStatusFilter, setBookingStatusFilter] = useState<'all' | 'Confirmed' | 'Completed' | 'Cancelled'>('all');
+  const [bookingDateFilter, setBookingDateFilter] = useState('');
+
+  // Blog CRUD State
+  const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
+  const [blogSearchQuery, setBlogSearchQuery] = useState('');
+  const [blogCategoryFilter, setBlogCategoryFilter] = useState('All');
+  const [addBlogModalOpen, setAddBlogModalOpen] = useState(false);
+  const [editBlog, setEditBlog] = useState<BlogPost | null>(null);
+  const [deleteBlogConfirm, setDeleteBlogConfirm] = useState<BlogPost | null>(null);
 
   // Settings / Change Password State
   const [newPassword, setNewPassword] = useState('');
@@ -1203,11 +1856,13 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
     } catch (_) {}
   };
 
-  // Load activities from Supabase (synced across all devices)
+  // Load activities and blogs from Supabase & localStorage
   useEffect(() => {
     async function load() {
       const list = await getActivities();
       setActivitiesList(list);
+      const blogs = await getBlogPosts();
+      setBlogPosts(blogs);
     }
     load();
 
@@ -1440,19 +2095,105 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
   // ── DELETE TOUR ──
   const handleDelete = async () => {
     if (!deleteActivity) return;
+    const targetSlug = deleteActivity.slug;
+    const targetTitle = deleteActivity.title;
     const updated = activitiesList.filter((a) => a.id !== deleteActivity.id);
     setActivitiesList(updated);
     saveCustomLocally(updated);
+
+    // Save to deleted_activity_slugs so explore tours and other pages never display it
+    try {
+      const storedDeleted = localStorage.getItem('deleted_activity_slugs');
+      const deletedSlugs: string[] = storedDeleted ? JSON.parse(storedDeleted) : [];
+      if (!deletedSlugs.includes(targetSlug)) {
+        deletedSlugs.push(targetSlug);
+        localStorage.setItem('deleted_activity_slugs', JSON.stringify(deletedSlugs));
+      }
+    } catch (_) {}
+
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.from('activities').delete().eq('slug', deleteActivity.slug);
-      if (error) {
-        showToast('Deleted locally, but Supabase error: ' + error.message, 'error');
-        setDeleteActivity(null);
-        return;
+      try {
+        await supabase.from('activities').delete().eq('slug', targetSlug);
+      } catch (err) {
+        console.warn('Supabase delete error (handled via local filter):', err);
       }
     }
     setDeleteActivity(null);
-    showToast('Tour deleted from Supabase.');
+    showToast(`Tour "${targetTitle}" deleted.`);
+  };
+
+  // ── BLOG CRUD HANDLERS ──
+  const handleCreateBlog = async (post: BlogPost) => {
+    const updated = [post, ...blogPosts.filter((p) => p.id !== post.id)];
+    setBlogPosts(updated);
+    saveBlogPostsLocal(updated);
+    setAddBlogModalOpen(false);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('blogs').upsert([
+          {
+            id: post.id,
+            slug: post.slug,
+            title: post.title,
+            excerpt: post.excerpt,
+            content: post.content,
+            author: post.author,
+            published_date: post.publishedDate,
+            read_time: post.readTime,
+            category: post.category,
+            image_url: post.imageUrl,
+            related_activity_slugs: post.relatedActivitySlugs,
+          }
+        ], { onConflict: 'slug' });
+      } catch (_) {}
+    }
+    showToast(`Article "${post.title}" published!`);
+  };
+
+  const handleUpdateBlog = async (post: BlogPost) => {
+    const updated = blogPosts.map((p) => (p.id === post.id ? post : p));
+    setBlogPosts(updated);
+    saveBlogPostsLocal(updated);
+    setEditBlog(null);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('blogs').upsert([
+          {
+            id: post.id,
+            slug: post.slug,
+            title: post.title,
+            excerpt: post.excerpt,
+            content: post.content,
+            author: post.author,
+            published_date: post.publishedDate,
+            read_time: post.readTime,
+            category: post.category,
+            image_url: post.imageUrl,
+            related_activity_slugs: post.relatedActivitySlugs,
+          }
+        ], { onConflict: 'slug' });
+      } catch (_) {}
+    }
+    showToast(`Article "${post.title}" updated!`);
+  };
+
+  const handleDeleteBlog = async () => {
+    if (!deleteBlogConfirm) return;
+    const targetSlug = deleteBlogConfirm.slug;
+    const targetTitle = deleteBlogConfirm.title;
+    const updated = blogPosts.filter((p) => p.slug !== targetSlug);
+    setBlogPosts(updated);
+    deleteBlogPostLocal(targetSlug);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.from('blogs').delete().eq('slug', targetSlug);
+      } catch (_) {}
+    }
+    showToast(`Article "${targetTitle}" deleted.`);
+    setDeleteBlogConfirm(null);
   };
 
   // ── BOOKING STATUS UPDATE ──
@@ -1552,7 +2293,9 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
       }
     }
 
-    showToast(`Added ${member.name} (${member.role === 'super_admin' ? 'Super Admin' : 'Operations Staff'})!`);
+    setAddTeamModalOpen(false);
+    setInviteSentMember(member);
+    showToast(`Added ${member.name}! Preparing verification email...`);
   };
 
   const handleDeleteTeamMember = async (id: string) => {
@@ -1683,7 +2426,7 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
 
           {/* Tabs */}
           <div className="flex items-center gap-2 border-b border-gray-200 mb-8 pb-3 overflow-x-auto">
-            {(['overview', ...(isSuperAdmin ? ['activities'] : []), 'bookings', ...(isSuperAdmin ? ['team'] : []), 'settings'] as const).map((tab) => (
+            {(['overview', ...(isSuperAdmin ? ['activities'] : []), 'bookings', 'blog', ...(isSuperAdmin ? ['team'] : []), 'settings'] as const).map((tab) => (
               <button key={tab} onClick={() => setActiveTab(tab as any)}
                 className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer ${
                   activeTab === tab ? 'bg-emerald-800 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'
@@ -1691,6 +2434,7 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
                 {tab === 'overview' && 'Overview & Analytics'}
                 {tab === 'activities' && `Tour Catalog (${activitiesList.length})`}
                 {tab === 'bookings' && `Bookings (${bookings.length})`}
+                {tab === 'blog' && `Blog Articles (${blogPosts.length})`}
                 {tab === 'team' && `Team & Staff (${teamMembers.length})`}
                 {tab === 'settings' && 'Settings & Password'}
               </button>
@@ -1819,62 +2563,322 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
           )}
 
           {/* ── BOOKINGS ── */}
-          {activeTab === 'bookings' && (
-            <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-extrabold text-gray-900">All Guest Reservations</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">Manage customer orders, hotel pickups, and contact guests directly.</p>
+          {activeTab === 'bookings' && (() => {
+            const filteredBookings = bookings.filter((b) => {
+              const q = bookingSearchQuery.toLowerCase().trim();
+              const matchesSearch = !q ||
+                b.name.toLowerCase().includes(q) ||
+                b.email.toLowerCase().includes(q) ||
+                b.ref.toLowerCase().includes(q) ||
+                b.title.toLowerCase().includes(q) ||
+                (b.hotel && b.hotel.toLowerCase().includes(q));
+
+              const matchesStatus = bookingStatusFilter === 'all' || b.status.toLowerCase() === bookingStatusFilter.toLowerCase();
+              const matchesDate = !bookingDateFilter || b.date === bookingDateFilter;
+
+              return matchesSearch && matchesStatus && matchesDate;
+            });
+
+            const confirmedCount = bookings.filter(b => b.status === 'Confirmed').length;
+            const completedCount = bookings.filter(b => b.status === 'Completed').length;
+            const cancelledCount = bookings.filter(b => b.status === 'Cancelled').length;
+            const isFiltered = Boolean(bookingSearchQuery || bookingStatusFilter !== 'all' || bookingDateFilter);
+
+            return (
+              <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-base font-extrabold text-gray-900">All Guest Reservations</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Filter bookings by status, travel date, customer info, and chat with guests.</p>
+                  </div>
+                  <span className="text-xs text-gray-500 font-bold bg-gray-100 px-3 py-1.5 rounded-xl self-start sm:self-auto">
+                    {filteredBookings.length} {filteredBookings.length === 1 ? 'reservation' : 'reservations'} {isFiltered && `(of ${bookings.length})`}
+                  </span>
                 </div>
-                <span className="text-xs text-gray-500 font-bold bg-gray-100 px-3 py-1.5 rounded-xl">{bookings.length} reservations</span>
-              </div>
-              <div className="space-y-4">
-                {bookings.map((b) => (
-                  <div key={b.ref} className="p-5 rounded-2xl bg-gray-50/70 border border-gray-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono font-bold text-emerald-800 text-xs bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">{b.ref}</span>
-                        <span className="text-xs text-gray-400">• Travel Date: <strong className="text-gray-700">{b.date}</strong></span>
-                      </div>
-                      <h4 className="font-extrabold text-base text-gray-900">{b.name} <span className="font-normal text-xs text-gray-500">({b.email})</span></h4>
-                      <p className="text-xs font-semibold text-emerald-950 mt-0.5">Tour: {b.title}</p>
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 mt-1">
-                        <span>👥 Guests: <strong>{b.guests} person(s)</strong></span>
-                        <span>💵 Amount: <strong className="text-emerald-900">${b.total}</strong></span>
-                        {b.hotel && <span>🏨 Pickup: <strong>{b.hotel}</strong></span>}
-                      </div>
+
+                {/* Filter Controls Bar */}
+                <div className="p-4 bg-gray-50/80 rounded-2xl border border-gray-200/70 space-y-3">
+                  <div className="flex flex-col md:flex-row gap-3">
+                    {/* Search Input */}
+                    <div className="flex-1 relative">
+                      <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search by name, email, booking ref (e.g. BMT-), tour title, or hotel..."
+                        value={bookingSearchQuery}
+                        onChange={(e) => setBookingSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-8 py-2 bg-white border border-gray-200 rounded-xl text-xs text-gray-900 placeholder:text-gray-400 outline-none focus:border-emerald-600 shadow-2xs"
+                      />
+                      {bookingSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setBookingSearchQuery('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0 self-start md:self-auto">
-                      {/* Status Selector */}
-                      <select
-                        value={b.status}
-                        onChange={(e) => handleUpdateBookingStatus(b.ref, e.target.value)}
-                        className={`text-xs font-extrabold px-3 py-1.5 rounded-xl border cursor-pointer outline-none ${
-                          b.status === 'Completed' ? 'bg-blue-50 text-blue-800 border-blue-200' : b.status === 'Cancelled' ? 'bg-red-50 text-red-800 border-red-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                        }`}
-                      >
-                        <option value="Confirmed">Confirmed</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Cancelled">Cancelled</option>
-                      </select>
-
-                      {/* WhatsApp Direct Link */}
-                      <a
-                        href={`https://wa.me/6285128016716?text=Hello%20${encodeURIComponent(b.name)},%20we%20are%20contacting%20you%20from%20Bali%20Mesari%20Tour%20regarding%20booking%20${b.ref}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold text-xs rounded-xl flex items-center gap-1 shadow-sm transition-colors"
-                      >
-                        <PhoneCall className="w-3.5 h-3.5" />
-                        <span>Chat WA</span>
-                      </a>
+                    {/* Date Filter */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 bg-white px-3 py-2 border border-gray-200 rounded-xl shadow-2xs">
+                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                        <input
+                          type="date"
+                          value={bookingDateFilter}
+                          onChange={(e) => setBookingDateFilter(e.target.value)}
+                          className="text-xs text-gray-700 bg-transparent outline-none cursor-pointer"
+                        />
+                      </div>
+                      {bookingDateFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setBookingDateFilter('')}
+                          className="text-xs font-bold text-gray-500 hover:text-red-500 px-2 py-1 bg-white border border-gray-200 rounded-lg cursor-pointer"
+                          title="Clear date filter"
+                        >
+                          Clear Date
+                        </button>
+                      )}
                     </div>
                   </div>
-                ))}
+
+                  {/* Status Pills & Reset */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-gray-200/50">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[11px] font-bold text-gray-400 mr-1">Status:</span>
+                      {[
+                        { id: 'all', label: 'All', count: bookings.length },
+                        { id: 'Confirmed', label: 'Confirmed', count: confirmedCount },
+                        { id: 'Completed', label: 'Completed', count: completedCount },
+                        { id: 'Cancelled', label: 'Cancelled', count: cancelledCount },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => setBookingStatusFilter(item.id as any)}
+                          className={`text-xs font-bold px-3 py-1 rounded-xl transition-all cursor-pointer ${
+                            bookingStatusFilter === item.id
+                              ? 'bg-emerald-800 text-white shadow-xs'
+                              : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                          }`}
+                        >
+                          {item.label} ({item.count})
+                        </button>
+                      ))}
+                    </div>
+
+                    {isFiltered && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBookingSearchQuery('');
+                          setBookingStatusFilter('all');
+                          setBookingDateFilter('');
+                        }}
+                        className="text-xs font-bold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Reset All Filters</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bookings List */}
+                {filteredBookings.length > 0 ? (
+                  <div className="space-y-4">
+                    {filteredBookings.map((b) => (
+                      <div key={b.ref} className="p-5 rounded-2xl bg-gray-50/70 border border-gray-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-mono font-bold text-emerald-800 text-xs bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">{b.ref}</span>
+                            <span className="text-xs text-gray-400">• Travel Date: <strong className="text-gray-700">{b.date}</strong></span>
+                          </div>
+                          <h4 className="font-extrabold text-base text-gray-900">{b.name} <span className="font-normal text-xs text-gray-500">({b.email})</span></h4>
+                          <p className="text-xs font-semibold text-emerald-950 mt-0.5">Tour: {b.title}</p>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 mt-1">
+                            <span>👥 Guests: <strong>{b.guests} person(s)</strong></span>
+                            <span>💵 Amount: <strong className="text-emerald-900">${b.total}</strong></span>
+                            {b.hotel && <span>🏨 Pickup: <strong>{b.hotel}</strong></span>}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0 self-start md:self-auto">
+                          {/* Status Selector */}
+                          <select
+                            value={b.status}
+                            onChange={(e) => handleUpdateBookingStatus(b.ref, e.target.value)}
+                            className={`text-xs font-extrabold px-3 py-1.5 rounded-xl border cursor-pointer outline-none ${
+                              b.status === 'Completed' ? 'bg-blue-50 text-blue-800 border-blue-200' : b.status === 'Cancelled' ? 'bg-red-50 text-red-800 border-red-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}
+                          >
+                            <option value="Confirmed">Confirmed</option>
+                            <option value="Completed">Completed</option>
+                            <option value="Cancelled">Cancelled</option>
+                          </select>
+
+                          {/* WhatsApp Direct Link */}
+                          <a
+                            href={`https://wa.me/6285128016716?text=Hello%20${encodeURIComponent(b.name)},%20we%20are%20contacting%20you%20from%20Bali%20Mesari%20Tour%20regarding%20booking%20${b.ref}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold text-xs rounded-xl flex items-center gap-1 shadow-sm transition-colors"
+                          >
+                            <PhoneCall className="w-3.5 h-3.5" />
+                            <span>Chat WA</span>
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-10 text-center bg-gray-50 rounded-2xl border border-gray-200">
+                    <p className="text-sm font-bold text-gray-700">No reservations match your filter criteria.</p>
+                    <p className="text-xs text-gray-400 mt-1">Try adjusting the search query or changing the status filter.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBookingSearchQuery('');
+                        setBookingStatusFilter('all');
+                        setBookingDateFilter('');
+                      }}
+                      className="mt-3 px-4 py-2 bg-emerald-800 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors cursor-pointer"
+                    >
+                      Clear Filters
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
+
+          {/* ── BLOG MANAGEMENT TAB ── */}
+          {activeTab === 'blog' && (() => {
+            const filteredBlogs = blogPosts.filter((p) => {
+              const q = blogSearchQuery.toLowerCase().trim();
+              const matchesSearch = !q || p.title.toLowerCase().includes(q) || p.excerpt.toLowerCase().includes(q) || p.author.toLowerCase().includes(q);
+              const matchesCategory = blogCategoryFilter === 'All' || p.category === blogCategoryFilter;
+              return matchesSearch && matchesCategory;
+            });
+
+            return (
+              <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-base font-extrabold text-gray-900">Blog Articles & Travel Guides</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">Publish and manage local guides, culture tips, and itineraries for tourists.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAddBlogModalOpen(true)}
+                    className="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-md shadow-emerald-900/20 transition-all cursor-pointer self-start sm:self-auto"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Write New Article</span>
+                  </button>
+                </div>
+
+                {/* Filter and Search Bar */}
+                <div className="flex flex-col md:flex-row gap-3">
+                  <div className="flex-1 relative">
+                    <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Search articles by title, summary, or author..."
+                      value={blogSearchQuery}
+                      onChange={(e) => setBlogSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-900 placeholder:text-gray-400 outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    {['All', ...BLOG_CATEGORIES].map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setBlogCategoryFilter(cat)}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
+                          blogCategoryFilter === cat
+                            ? 'bg-emerald-800 text-white border-emerald-800 shadow-xs'
+                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Articles Table/Grid */}
+                {filteredBlogs.length > 0 ? (
+                  <div className="space-y-3">
+                    {filteredBlogs.map((post) => (
+                      <div
+                        key={post.id || post.slug}
+                        className="p-4 rounded-2xl bg-gray-50/70 border border-gray-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-gray-300 transition-colors"
+                      >
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className="w-20 h-16 sm:w-24 sm:h-20 rounded-xl overflow-hidden bg-gray-200 shrink-0 border border-gray-200">
+                            <img src={post.imageUrl} alt={post.title} className="w-full h-full object-cover" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                                {post.category}
+                              </span>
+                              <span className="text-[10px] text-gray-400">• {post.readTime}</span>
+                              <span className="text-[10px] text-gray-400">• {post.publishedDate}</span>
+                            </div>
+                            <h4 className="font-extrabold text-sm text-gray-900 truncate">{post.title}</h4>
+                            <p className="text-xs text-gray-500 line-clamp-1 mt-0.5">{post.excerpt}</p>
+                            <span className="text-[11px] text-gray-400 font-medium">By {post.author}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                          <a
+                            href={`/blog/${post.slug}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 bg-gray-100 hover:bg-emerald-50 hover:text-emerald-700 text-gray-600 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors"
+                            title="Preview Article"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Preview</span>
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() => setEditBlog(post)}
+                            className="p-2 bg-gray-100 hover:bg-amber-50 hover:text-amber-700 text-gray-600 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Edit Article"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Edit</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setDeleteBlogConfirm(post)}
+                            className="p-2 bg-gray-100 hover:bg-red-50 hover:text-red-600 text-gray-600 rounded-xl text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Delete Article"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-10 text-center bg-gray-50 rounded-2xl border border-gray-200">
+                    <p className="text-sm font-bold text-gray-700">No articles found.</p>
+                    <p className="text-xs text-gray-400 mt-1">Click "+ Write New Article" to publish your first travel guide.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── TEAM & STAFF (SUPER ADMIN ONLY) ── */}
           {activeTab === 'team' && isSuperAdmin && (
@@ -2066,6 +3070,10 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
       {editActivity && <TourFormModal mode="edit" initial={editActivity} onClose={() => setEditActivity(null)} onSave={handleUpdate} />}
       {deleteActivity && <DeleteConfirmModal activity={deleteActivity} onCancel={() => setDeleteActivity(null)} onConfirm={handleDelete} />}
       {addTeamModalOpen && <AddTeamMemberModal onClose={() => setAddTeamModalOpen(false)} onSave={handleAddTeamMember} />}
+      {inviteSentMember && <InviteSentModal member={inviteSentMember} onClose={() => setInviteSentMember(null)} />}
+      {addBlogModalOpen && <BlogFormModal mode="create" activities={activitiesList} onClose={() => setAddBlogModalOpen(false)} onSave={handleCreateBlog} />}
+      {editBlog && <BlogFormModal mode="edit" initial={editBlog} activities={activitiesList} onClose={() => setEditBlog(null)} onSave={handleUpdateBlog} />}
+      {deleteBlogConfirm && <DeleteBlogModal post={deleteBlogConfirm} onCancel={() => setDeleteBlogConfirm(null)} onConfirm={handleDeleteBlog} />}
 
       <Footer />
     </div>

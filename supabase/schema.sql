@@ -372,4 +372,30 @@ CREATE POLICY "Public read reviews" ON public.reviews FOR SELECT USING (true);
 
 -- Public insert policy for bookings & reviews
 CREATE POLICY "Public insert bookings" ON public.bookings FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public update bookings" ON public.bookings FOR UPDATE USING (true) WITH CHECK (true);
 CREATE POLICY "Public insert reviews" ON public.reviews FOR INSERT WITH CHECK (true);
+
+-- 9. BLOGS & ARTICLES
+CREATE TABLE IF NOT EXISTS public.blogs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    slug VARCHAR(255) UNIQUE NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    excerpt TEXT,
+    content TEXT NOT NULL,
+    author VARCHAR(150) DEFAULT 'Bali Mesari Team',
+    published_date DATE DEFAULT CURRENT_DATE,
+    read_time VARCHAR(50) DEFAULT '5 min read',
+    image_url TEXT,
+    category VARCHAR(100) DEFAULT 'Travel Tips',
+    related_activity_slugs TEXT[],
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE public.blogs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public read blogs" ON public.blogs FOR SELECT USING (true);
+CREATE POLICY "Admin all blogs" ON public.blogs FOR ALL USING (true) WITH CHECK (true);
+
+-- Admin CRUD policies for activities and images
+CREATE POLICY "Admin all activities" ON public.activities FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Admin all activity_images" ON public.activity_images FOR ALL USING (true) WITH CHECK (true);
