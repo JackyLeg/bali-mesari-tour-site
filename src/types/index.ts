@@ -25,6 +25,21 @@ export interface ItineraryItem {
   description?: string;
 }
 
+/**
+ * A single pricing tier within a catalog listing.
+ *
+ * Examples from real catalogs:
+ *   { name: "Package A — East Side", description: "Diamond, Atuh, Kelingking", price: 80, unit: "/ person" }
+ *   { name: "Full Day (up to 10 hrs)",  description: "Air-conditioned car + driver", price: 50, unit: "/ car" }
+ *   { name: "ATV + Rafting",            description: "60 min ATV + 2 hr rafting",  price: 89, unit: "/ person" }
+ */
+export interface PricePackage {
+  name: string;        // e.g. "Package A — East Side"
+  description: string; // Short list of what's included in this tier
+  price: number;       // USD price
+  unit: string;        // "/ person" | "/ car" | "/ group" | "/ boat" | "/ hour"
+}
+
 export interface Activity {
   id: string;
   title: string;
@@ -38,12 +53,13 @@ export interface Activity {
   included: string[];
   notIncluded: string[];
   itinerary: ItineraryItem[];
-  durationHours: number;
+  durationHours?: number;       // Optional — not all tours are time-based
   pickupAvailable: boolean;
   pickupLocations: string;
   meetingPoint: string;
-  priceOriginal?: number;
-  priceDiscounted: number;
+  priceOriginal?: number;       // Only set if hasDiscount is true
+  priceDiscounted: number;      // The "From $XX" shown on cards (min of packages if packages exist)
+  pricePackages?: PricePackage[]; // Multi-tier pricing (Package A/B/C, per-car rates, etc.)
   rating: number;
   reviewCount: number;
   cancellationPolicy: string;

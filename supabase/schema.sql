@@ -57,12 +57,13 @@ CREATE TABLE IF NOT EXISTS public.activities (
     included TEXT[], -- Array of included items
     not_included TEXT[], -- Array of excluded items
     itinerary JSONB, -- Array of timeline steps [{ time: '06:00', title: 'Pickup' }]
-    duration_hours NUMERIC(4, 1) NOT NULL,
+    duration_hours NUMERIC(4, 1),                          -- NULL for non-durational tours (car charters, etc.)
     pickup_available BOOLEAN DEFAULT true,
     pickup_locations TEXT,
     meeting_point TEXT,
     price_original NUMERIC(10, 2),
     price_discounted NUMERIC(10, 2) NOT NULL,
+    price_packages JSONB,                                   -- [{name, description, price, unit}, ...] for multi-tier pricing
     rating NUMERIC(2, 1) DEFAULT 4.9,
     review_count INT DEFAULT 0,
     cancellation_policy VARCHAR(255) DEFAULT 'Free cancellation up to 24 hours in advance',
@@ -273,13 +274,15 @@ CREATE TABLE IF NOT EXISTS public.activities (
     highlights TEXT[], -- Array of key highlights
     included TEXT[], -- Array of included items
     not_included TEXT[], -- Array of excluded items
-    itinerary JSONB, -- Array of timeline steps [{ time: '06:00', title: 'Pickup' }]
-    duration_hours NUMERIC(4, 1) NOT NULL,
+    itinerary JSONB,
+    duration_hours NUMERIC(4, 1),
     pickup_available BOOLEAN DEFAULT true,
     pickup_locations TEXT,
     meeting_point TEXT,
     price_original NUMERIC(10, 2),
     price_discounted NUMERIC(10, 2) NOT NULL,
+    price_packages JSONB,
+
     rating NUMERIC(2, 1) DEFAULT 4.9,
     review_count INT DEFAULT 0,
     cancellation_policy VARCHAR(255) DEFAULT 'Free cancellation up to 24 hours in advance',

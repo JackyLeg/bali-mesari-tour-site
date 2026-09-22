@@ -358,15 +358,22 @@ function LoginScreen({ onLogin }: { onLogin: (session?: any) => void }) {
 }
 
 // ─── Image Uploader ───────────────────────────────────────────────────────────
+// 📚 HOW THE COVER PICKER WORKS:
+//   Images are stored as a flat array. The first image (index 0) is always the cover
+//   shown on catalog cards. "Set as Cover" swaps the chosen image to position 0.
+//   Drag & drop works whether the zone is empty or already has photos.
 
 interface ImageUploaderProps {
   images: string[];
   onChange: (imgs: string[]) => void;
+  coverIndex: number;
+  onSetCover: (idx: number) => void;
 }
 
-function ImageUploader({ images, onChange }: ImageUploaderProps) {
+function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFiles = (files: FileList | null) => {
     if (!files) return;
@@ -374,55 +381,83 @@ function ImageUploader({ images, onChange }: ImageUploaderProps) {
     const remaining = MAX_IMAGES - images.length;
     if (remaining <= 0) { setError(`Maximum ${MAX_IMAGES} images allowed.`); return; }
     const toProcess = Array.from(files).slice(0, remaining);
-    if (files.length > remaining) setError(`Only ${remaining} more image(s) allowed. Others were ignored.`);
+    if (files.length > remaining) setError(`Only ${remaining} more can be added. Others were skipped.`);
 
-    toProcess.forEach((file) => {
-      if (!file.type.startsWith('image/')) { setError('Only image files accepted (jpg, png, webp, gif).'); return; }
+    // Read all files and append them together
+    const pending: string[] = [];
+    let done = 0;
+    toProcess.forEach((file, i) => {
+      if (!file.type.startsWith('image/')) { setError('Only image files accepted (jpg, png, webp, gif).'); done++; return; }
       const reader = new FileReader();
       reader.onload = (ev) => {
-        const result = ev.target?.result as string;
-        onChange([...images, result]);
+        pending[i] = ev.target?.result as string;
+        done++;
+        if (done === toProcess.length) {
+          onChange([...images, ...pending.filter(Boolean)]);
+        }
       };
       reader.readAsDataURL(file);
     });
   };
 
-  const removeImage = (idx: number) => onChange(images.filter((_, i) => i !== idx));
+  const removeImage = (idx: number) => {
+    onChange(images.filter((_, i) => i !== idx));
+    // If removed image was cover, shift cover to 0
+    if (idx === coverIndex && images.length > 1) onSetCover(0);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleFiles(e.dataTransfer.files);
+  };
 
   return (
     <div className="space-y-3">
+
+      {/* Photo thumbnails grid */}
       {images.length > 0 && (
         <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
           {images.map((src, idx) => (
-            <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group">
-              <img src={src} alt={`Preview ${idx + 1}`} className="w-full h-full object-cover" />
-              {idx === 0 && (
-                <span className="absolute bottom-1 left-1 text-[9px] font-bold bg-amber-400 text-emerald-950 px-1.5 py-0.5 rounded-md">Cover</span>
+            <div
+              key={idx}
+              className={`relative aspect-square rounded-xl overflow-hidden border-2 group ${
+                idx === coverIndex ? 'border-amber-400 shadow-md shadow-amber-100' : 'border-gray-200'
+              }`}
+            >
+              <img src={src} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+
+              {/* Gold ★ Cover badge on active cover */}
+              {idx === coverIndex && (
+                <span className="absolute bottom-1 left-1 text-[9px] font-extrabold bg-amber-400 text-emerald-950 px-1.5 py-0.5 rounded-md leading-none">
+                  ★ Cover
+                </span>
               )}
-              <button type="button" onClick={() => removeImage(idx)}
-                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+
+              {/* "Set as Cover" hover button on non-cover images */}
+              {idx !== coverIndex && (
+                <button
+                  type="button"
+                  onClick={() => onSetCover(idx)}
+                  title="Set as cover photo"
+                  className="absolute bottom-1 left-1 text-[9px] font-bold bg-black/60 text-white px-1.5 py-0.5 rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-amber-400 hover:text-emerald-950 whitespace-nowrap leading-none"
+                >
+                  ★ Cover
+                </button>
+              )}
+
+              {/* Delete button */}
+              <button
+                type="button"
+                onClick={() => removeImage(idx)}
+                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow"
+              >
                 <X className="w-3 h-3" />
               </button>
             </div>
           ))}
-          {images.length < MAX_IMAGES && (
-            <button type="button" onClick={() => inputRef.current?.click()}
-              className="aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-emerald-500 flex items-center justify-center text-gray-400 hover:text-emerald-600 transition-colors">
-              <Plus className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-      )}
-      {images.length === 0 && (
-        <div onClick={() => inputRef.current?.click()}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
-          className="border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center cursor-pointer hover:border-emerald-500 hover:bg-emerald-50/30 transition-all">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3">
-            <Upload className="w-5 h-5" />
-          </div>
-          <p className="text-sm font-bold text-gray-700">Click or drag & drop images</p>
-          <p className="text-xs text-gray-400 mt-1">JPG, PNG, WEBP, GIF — up to {MAX_IMAGES} photos</p>
         </div>
       )}
       {error && (
@@ -438,6 +473,20 @@ function ImageUploader({ images, onChange }: ImageUploaderProps) {
 }
 
 // ─── Tour Form Modal ──────────────────────────────────────────────────────────
+// Changes from original:
+//   ① Package / Pricing Tiers builder (for Package A/B, per-car, etc.)
+//   ② Cover picker + always-on drag zone (passed down to ImageUploader)
+//   ③ Optional discount toggle
+//   ④ Duration field removed
+//   ⑤ Renamed "Location Name" → "Where does this tour go?"
+//      Renamed "Destination Region" → "Destination Filter Region"
+
+export interface PricePackageForm {
+  name: string;
+  description: string;
+  price: string; // kept as string for input binding, parsed on submit
+  unit: string;
+}
 
 interface TourFormModalProps {
   mode: 'add' | 'edit';
@@ -449,6 +498,29 @@ interface TourFormModalProps {
 function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const [images, setImages] = useState<string[]>(initial?.images ?? []);
+
+  // ── Cover photo index ────────────────────────────────────────────────────────
+  // Images array position 0 = cover shown on catalog cards.
+  // We track a local index so the user can pick any photo as cover;
+  // on submit we reorder the array so the chosen one ends up at [0].
+  const [coverIndex, setCoverIndex] = useState(0);
+
+  // ── Pricing packages ─────────────────────────────────────────────────────────
+  // Supports multiple named price tiers (Package A/B, per-car, etc.)
+  // The minimum package price auto-fills the card's "From $XX" display.
+  const [pricePackages, setPricePackages] = useState<PricePackageForm[]>(
+    initial?.pricePackages
+      ? initial.pricePackages.map(p => ({ ...p, price: String(p.price) }))
+      : []
+  );
+
+  // ── Discount toggle ──────────────────────────────────────────────────────────
+  // When OFF: single "Base Price" field.
+  // When ON: "Original Price" (crossed-out) + "Sale Price" both shown.
+  const [hasDiscount, setHasDiscount] = useState(
+    !!(initial?.priceOriginal && initial.priceOriginal > 0)
+  );
+
   const [form, setForm] = useState({
     title: initial?.title ?? '',
     locationName: initial?.locationName ?? '',
@@ -456,12 +528,11 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
     categorySlug: initial?.categorySlug ?? 'adventure',
     shortDescription: initial?.shortDescription ?? '',
     fullDescription: initial?.fullDescription ?? '',
-    highlights: (initial?.highlights ?? ['Experienced local guide', 'Hotel pickup included', 'Sacred photos', 'Refreshments']).join(', '),
-    includedText: (initial?.included ?? ['Hotel pickup and drop-off', 'English-speaking driver', 'Mineral water', 'Insurance']).join('\n'),
-    notIncludedText: (initial?.notIncluded ?? ['Personal tips & souvenirs', 'Lunch / meals (unless specified)']).join('\n'),
-    durationHours: initial?.durationHours ?? 6,
-    priceOriginal: initial?.priceOriginal ?? 50,
-    priceDiscounted: initial?.priceDiscounted ?? 35,
+    highlights: (initial?.highlights ?? ['Hotel pickup included', 'English-speaking guide']).join(', '),
+    includedText: (initial?.included ?? ['Hotel pickup and drop-off', 'English-speaking driver', 'Mineral water']).join('\n'),
+    notIncludedText: (initial?.notIncluded ?? ['Your meals', 'Personal tips']).join('\n'),
+    priceOriginal: initial?.priceOriginal ? String(initial.priceOriginal) : '',
+    priceDiscounted: initial?.priceDiscounted ? String(initial.priceDiscounted) : '',
     rating: initial?.rating ?? 4.9,
     reviewCount: initial?.reviewCount ?? 120,
     badge: initial?.badge ?? 'Popular',
@@ -471,33 +542,46 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
   const [itinerary, setItinerary] = useState<{ time: string; title: string; description: string }[]>(
     initial?.itinerary && initial.itinerary.length > 0
       ? initial.itinerary.map(item => ({ time: item.time, title: item.title, description: item.description || '' }))
-      : [
-          { time: '08:00 AM', title: 'Hotel Pickup', description: 'Driver arrives at your hotel lobby in air-conditioned comfort.' },
-          { time: '09:30 AM', title: 'Activity Start', description: 'Guided experience begins with our certified local expert.' },
-          { time: '01:00 PM', title: 'Lunch & Drop-off', description: 'Enjoy local cuisine and safe return back to your hotel.' },
-        ]
+      : []
   );
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
-  const updateItineraryStep = (index: number, key: 'time' | 'title' | 'description', val: string) => {
+  // Package helpers
+  const addPackage = () => setPricePackages(prev => [...prev, { name: '', description: '', price: '', unit: '/ person' }]);
+  const removePackage = (idx: number) => setPricePackages(prev => prev.filter((_, i) => i !== idx));
+  const updatePackage = (idx: number, key: keyof PricePackageForm, val: string) =>
+    setPricePackages(prev => prev.map((p, i) => i === idx ? { ...p, [key]: val } : p));
+
+  // Itinerary helpers
+  const updateItineraryStep = (index: number, key: 'time' | 'title' | 'description', val: string) =>
     setItinerary(prev => prev.map((step, i) => (i === index ? { ...step, [key]: val } : step)));
-  };
-
-  const addItineraryStep = () => {
-    setItinerary(prev => [...prev, { time: '10:00 AM', title: 'New Stop / Activity', description: 'Details about this part of the tour.' }]);
-  };
-
-  const removeItineraryStep = (index: number) => {
+  const addItineraryStep = () =>
+    setItinerary(prev => [...prev, { time: '', title: '', description: '' }]);
+  const removeItineraryStep = (index: number) =>
     setItinerary(prev => prev.filter((_, i) => i !== index));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (images.length === 0) { alert('Please upload at least one image.'); return; }
+    if (images.length === 0) { alert('Please upload at least one photo.'); return; }
     setSubmitting(true);
 
     const slug = form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '') || `tour-${Date.now()}`;
+
+    // Reorder so chosen cover is at index 0
+    const orderedImages = coverIndex > 0 && images.length > 1
+      ? [images[coverIndex], ...images.filter((_, i) => i !== coverIndex)]
+      : images;
+
+    // Parse packages (ignore empty rows)
+    const parsedPackages = pricePackages
+      .filter(p => p.name.trim() && Number(p.price) > 0)
+      .map(p => ({ name: p.name.trim(), description: p.description.trim(), price: Number(p.price), unit: p.unit }));
+
+    // Lowest package price = the "From $XX" shown on cards
+    const basePrice = parsedPackages.length > 0
+      ? Math.min(...parsedPackages.map(p => p.price))
+      : Number(form.priceDiscounted) || 0;
 
     const parsedIncluded = form.includedText.split('\n').map(s => s.trim()).filter(Boolean);
     const parsedNotIncluded = form.notIncludedText.split('\n').map(s => s.trim()).filter(Boolean);
@@ -515,16 +599,14 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
       highlights: parsedHighlights.length > 0 ? parsedHighlights : ['Experienced local guide'],
       included: parsedIncluded.length > 0 ? parsedIncluded : ['Hotel pickup and drop-off', 'English-speaking driver'],
       notIncluded: parsedNotIncluded.length > 0 ? parsedNotIncluded : ['Personal expenses'],
-      itinerary: itinerary.length > 0 ? itinerary : [
-        { time: '08:00 AM', title: 'Hotel Pickup', description: 'Driver arrives at your hotel lobby.' },
-        { time: '01:00 PM', title: 'Return Journey', description: 'Return back to hotel.' },
-      ],
-      durationHours: Number(form.durationHours),
+      itinerary,
+      // durationHours intentionally omitted — not all tours are time-based
       pickupAvailable: true,
       pickupLocations: 'Ubud, Canggu, Seminyak, Kuta, Sanur',
       meetingPoint: 'Hotel Lobby',
-      priceOriginal: Number(form.priceOriginal),
-      priceDiscounted: Number(form.priceDiscounted),
+      priceOriginal: hasDiscount && form.priceOriginal ? Number(form.priceOriginal) : undefined,
+      priceDiscounted: basePrice,
+      pricePackages: parsedPackages.length > 0 ? parsedPackages : undefined,
       rating: Number(form.rating) || 4.9,
       reviewCount: Number(form.reviewCount) || 1,
       cancellationPolicy: 'Free cancellation up to 24 hours in advance',
@@ -533,12 +615,17 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
       status: 'published',
       isFeatured: true,
       isTrending: true,
-      images,
+      images: orderedImages,
     };
 
     onSave(activity);
     setSubmitting(false);
   };
+
+  // Live preview of minimum package price
+  const minPackagePrice = pricePackages.length > 0
+    ? Math.min(...pricePackages.map(p => Number(p.price) || Infinity).filter(isFinite))
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -547,7 +634,7 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
           <div>
             <span className="text-[10px] font-bold uppercase text-amber-600 tracking-wider block">Admin Inventory</span>
             <h3 className="text-xl font-extrabold text-gray-900">
-              {mode === 'add' ? 'Add New Tour Experience' : 'Edit Tour Experience'}
+              {mode === 'add' ? 'Add New Catalog Listing' : 'Edit Catalog Listing'}
             </h3>
           </div>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-700">
@@ -556,37 +643,66 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6 text-xs font-medium text-gray-700">
-          
-          {/* Section 1: Photos */}
+
+          {/* ── A: Photos ─────────────────────────────────────────────────────── */}
           <div className="p-4 rounded-2xl bg-gray-50 border border-gray-200/70">
-            <label className="font-bold text-gray-900 block mb-2 flex items-center gap-1.5">
+            <label className="font-bold text-gray-900 flex items-center gap-1.5 mb-3">
               <ImageIcon className="w-4 h-4 text-emerald-700" />
-              <span>Tour Photos *</span>
-              <span className="font-normal text-gray-500">(up to 10 images — first image is cover photo)</span>
+              <span>Photos *</span>
+              <span className="font-normal text-gray-500 text-[11px]">
+                — drag & drop multiple files at once. Hover any photo → click ★ Cover to set thumbnail.
+              </span>
             </label>
-            <ImageUploader images={images} onChange={setImages} />
+            <ImageUploader
+              images={images}
+              onChange={setImages}
+              coverIndex={coverIndex}
+              onSetCover={setCoverIndex}
+            />
           </div>
 
-          {/* Section 2: Core Details */}
+          {/* ── B: Basic Information ───────────────────────────────────────────── */}
           <div className="space-y-4">
             <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">1. Basic Information</h4>
-            
+
             <div>
-              <label className="font-bold text-gray-900 block mb-1">Tour Title *</label>
-              <input type="text" required placeholder="e.g. Mount Batur Sunrise Trekking & Natural Hot Springs"
+              <label className="font-bold text-gray-900 block mb-1">Catalog Title *</label>
+              <input type="text" required
+                placeholder="e.g. Amazing Package Nusa Penida Island"
                 value={form.title} onChange={(e) => set('title', e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 font-semibold text-gray-900" />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="font-bold text-gray-900 block mb-1">Location Name *</label>
-                <input type="text" required placeholder="e.g. Kintamani, Mount Batur"
+                {/*
+                  "Where does this tour go?" = the pin-badge text shown ON the photo card.
+                  e.g. "Nusa Penida Island" or "Ubud, Bali" or "Kintamani Area"
+                  It's a display label — doesn't affect filters.
+                */}
+                <label className="font-bold text-gray-900 block mb-1">
+                  Where does this tour go? *
+                  <span className="font-normal text-gray-400 ml-1 text-[10px]">
+                    (pin label shown on card photo)
+                  </span>
+                </label>
+                <input type="text" required
+                  placeholder="e.g. Nusa Penida Island"
                   value={form.locationName} onChange={(e) => set('locationName', e.target.value)}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600" />
               </div>
               <div>
-                <label className="font-bold text-gray-900 block mb-1">Destination Region</label>
+                {/*
+                  "Destination Filter Region" = which filter bucket this listing falls into.
+                  When customers filter by "Nusa Penida", listings with this dropdown set to
+                  "Nusa Penida" appear. Doesn't need to be the exact location text.
+                */}
+                <label className="font-bold text-gray-900 block mb-1">
+                  Destination Filter Region
+                  <span className="font-normal text-gray-400 ml-1 text-[10px]">
+                    (for customer search filters)
+                  </span>
+                </label>
                 <select value={form.destinationSlug} onChange={(e) => set('destinationSlug', e.target.value)}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 cursor-pointer">
                   <option value="ubud">Ubud</option>
@@ -599,7 +715,7 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
                 <label className="font-bold text-gray-900 block mb-1">Category</label>
                 <select value={form.categorySlug} onChange={(e) => set('categorySlug', e.target.value)}
@@ -611,27 +727,6 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
                   <option value="wellness">Wellness</option>
                   <option value="food-culinary">Food & Cooking</option>
                 </select>
-              </div>
-              <div>
-                <label className="font-bold text-gray-900 block mb-1">Original Price ($)</label>
-                <input type="number" min={0} value={form.priceOriginal}
-                  onChange={(e) => set('priceOriginal', Number(e.target.value))}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600" />
-              </div>
-              <div>
-                <label className="font-bold text-gray-900 block mb-1">Discounted Price ($) *</label>
-                <input type="number" min={0} required value={form.priceDiscounted}
-                  onChange={(e) => set('priceDiscounted', Number(e.target.value))}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600 font-extrabold text-emerald-900" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <div>
-                <label className="font-bold text-gray-900 block mb-1">Duration (Hours)</label>
-                <input type="number" min={1} value={form.durationHours}
-                  onChange={(e) => set('durationHours', Number(e.target.value))}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-emerald-600" />
               </div>
               <div>
                 <label className="font-bold text-gray-900 block mb-1">Badge Tag</label>
@@ -656,102 +751,218 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
                 </select>
               </div>
               <div>
-                <label className="font-bold text-gray-900 block mb-1">Rating Display</label>
-                <div className="flex gap-2">
+                <label className="font-bold text-gray-900 block mb-1">Rating / Reviews</label>
+                <div className="flex gap-1.5">
                   <input type="number" step="0.1" min="1" max="5" value={form.rating}
                     onChange={(e) => set('rating', Number(e.target.value))}
                     className="w-1/2 bg-gray-50 border border-gray-200 rounded-xl px-2 py-2.5 outline-none focus:border-emerald-600 font-bold text-amber-600" title="Rating (e.g. 4.9)" />
                   <input type="number" min="0" value={form.reviewCount}
                     onChange={(e) => set('reviewCount', Number(e.target.value))}
-                    className="w-1/2 bg-gray-50 border border-gray-200 rounded-xl px-2 py-2.5 outline-none focus:border-emerald-600" title="Review count (e.g. 150)" />
+                    className="w-1/2 bg-gray-50 border border-gray-200 rounded-xl px-2 py-2.5 outline-none focus:border-emerald-600" title="Review count" />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Section 3: Descriptions & Highlights */}
+          {/* ── C: Pricing ────────────────────────────────────────────────────── */}
           <div className="space-y-4 pt-4 border-t border-gray-100">
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">2. Descriptions & Highlights</h4>
-            
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">2. Pricing</h4>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Add named tiers (Package A/B, per-car, per-group) or set a single base price.
+                </p>
+              </div>
+              <button type="button" onClick={addPackage}
+                className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs rounded-xl border border-emerald-200/80 transition-colors shrink-0">
+                + Add Package
+              </button>
+            </div>
+
+            {/* Package rows */}
+            {pricePackages.length > 0 && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-12 gap-2 px-1 text-[10px] font-bold text-gray-400 uppercase tracking-wide">
+                  <span className="col-span-4">Package Name</span>
+                  <span className="col-span-4">What's in this tier</span>
+                  <span className="col-span-2">Price ($)</span>
+                  <span className="col-span-1">Unit</span>
+                  <span className="col-span-1"></span>
+                </div>
+                {pricePackages.map((pkg, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-emerald-50/50 border border-emerald-100 rounded-xl p-2">
+                    <input type="text"
+                      placeholder="e.g. Package A — East Side"
+                      value={pkg.name} onChange={(e) => updatePackage(idx, 'name', e.target.value)}
+                      className="col-span-4 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-gray-900 outline-none focus:border-emerald-600" />
+                    <input type="text"
+                      placeholder="Diamond Beach, Kelingking..."
+                      value={pkg.description} onChange={(e) => updatePackage(idx, 'description', e.target.value)}
+                      className="col-span-4 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs text-gray-600 outline-none focus:border-emerald-600" />
+                    <input type="number" min={0} placeholder="80"
+                      value={pkg.price} onChange={(e) => updatePackage(idx, 'price', e.target.value)}
+                      className="col-span-2 bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-extrabold text-emerald-800 outline-none focus:border-emerald-600" />
+                    <select value={pkg.unit} onChange={(e) => updatePackage(idx, 'unit', e.target.value)}
+                      className="col-span-1 bg-white border border-gray-200 rounded-lg px-1.5 py-1.5 text-[10px] text-gray-600 outline-none focus:border-emerald-600 cursor-pointer">
+                      <option value="/ person">/ person</option>
+                      <option value="/ car">/ car</option>
+                      <option value="/ group">/ group</option>
+                      <option value="/ boat">/ boat</option>
+                      <option value="/ hour">/ hour</option>
+                    </select>
+                    <button type="button" onClick={() => removePackage(idx)}
+                      className="col-span-1 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex justify-center">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+                {minPackagePrice !== null && isFinite(minPackagePrice) && (
+                  <p className="text-[11px] text-emerald-700 font-bold px-1">
+                    ✓ Cards will show: <span className="text-emerald-900">From ${minPackagePrice}</span>
+                    &nbsp;(lowest package price, auto-selected)
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Single base price — only when no packages */}
+            {pricePackages.length === 0 && (
+              <div className="space-y-3">
+                {/* Discount toggle */}
+                <label className="flex items-center gap-3 cursor-pointer select-none w-fit">
+                  <div className="relative">
+                    <input type="checkbox" checked={hasDiscount} onChange={(e) => setHasDiscount(e.target.checked)} className="sr-only peer" />
+                    <div className="w-9 h-5 bg-gray-200 rounded-full peer-checked:bg-emerald-600 transition-colors" />
+                    <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow peer-checked:translate-x-4 transition-transform" />
+                  </div>
+                  <span className="text-xs font-bold text-gray-700">This listing has a discount / sale price</span>
+                </label>
+
+                <div className={`grid gap-4 ${hasDiscount ? 'grid-cols-2' : 'grid-cols-1 max-w-xs'}`}>
+                  {hasDiscount && (
+                    <div>
+                      <label className="font-bold text-gray-900 block mb-1 line-through decoration-red-400">
+                        Original Price ($)
+                        <span className="font-normal text-gray-400 no-underline ml-1">(crossed-out on card)</span>
+                      </label>
+                      <input type="number" min={0}
+                        placeholder="e.g. 100"
+                        value={form.priceOriginal} onChange={(e) => set('priceOriginal', e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 text-gray-400" />
+                    </div>
+                  )}
+                  <div>
+                    <label className="font-bold text-gray-900 block mb-1">
+                      {hasDiscount ? 'Sale Price ($) *' : 'Base Price ($) *'}
+                      <span className="font-normal text-gray-400 ml-1">(shown as "From $XX" on card)</span>
+                    </label>
+                    <input type="number" min={0} required
+                      placeholder="e.g. 80"
+                      value={form.priceDiscounted} onChange={(e) => set('priceDiscounted', e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 font-extrabold text-emerald-900" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── D: Descriptions & Highlights ──────────────────────────────────── */}
+          <div className="space-y-4 pt-4 border-t border-gray-100">
+            <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">3. Descriptions & Highlights</h4>
             <div>
-              <label className="font-bold text-gray-900 block mb-1">Short Description * <span className="font-normal text-gray-500">(shown on catalog search cards)</span></label>
+              <label className="font-bold text-gray-900 block mb-1">
+                Short Description * <span className="font-normal text-gray-500">(shown on catalog cards)</span>
+              </label>
               <textarea rows={2} required placeholder="A short 1-2 sentence preview..."
                 value={form.shortDescription} onChange={(e) => set('shortDescription', e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600" />
             </div>
-
             <div>
-              <label className="font-bold text-gray-900 block mb-1">Full Description <span className="font-normal text-gray-500">(comprehensive tour story & details)</span></label>
-              <textarea rows={4} placeholder="Detailed paragraph describing the entire experience, what to expect, scenery, etc..."
+              <label className="font-bold text-gray-900 block mb-1">
+                Full Description <span className="font-normal text-gray-500">(shown on the listing detail page)</span>
+              </label>
+              <textarea rows={4} placeholder="Detailed description of the experience..."
                 value={form.fullDescription} onChange={(e) => set('fullDescription', e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 leading-relaxed" />
             </div>
-
             <div>
-              <label className="font-bold text-gray-900 block mb-1">Experience Highlights <span className="font-normal text-gray-500">(comma-separated)</span></label>
-              <input type="text" placeholder="Experienced local guide, Hotel pickup included, Sacred temple photos, Natural hot springs..."
+              <label className="font-bold text-gray-900 block mb-1">
+                Experience Highlights <span className="font-normal text-gray-500">(comma-separated bullet points)</span>
+              </label>
+              <input type="text"
+                placeholder="Hotel pickup included, English-speaking guide, All entrance fees included..."
                 value={form.highlights} onChange={(e) => set('highlights', e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600" />
             </div>
           </div>
 
-          {/* Section 4: What's Included & Not Included */}
+          {/* ── E: Inclusions & Exclusions ────────────────────────────────────── */}
           <div className="space-y-4 pt-4 border-t border-gray-100">
-            <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">3. Inclusions & Exclusions</h4>
+            <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">4. What's Included / Not Included</h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="font-bold text-gray-900 block mb-1 text-emerald-800">What’s Included <span className="font-normal text-gray-500">(one item per line)</span></label>
-                <textarea rows={4} placeholder="Hotel pickup & drop-off&#10;English speaking driver&#10;Mineral water & towels&#10;All entry tickets included"
+                <label className="font-bold text-emerald-800 block mb-1">
+                  ✓ Included <span className="font-normal text-gray-500">(one item per line)</span>
+                </label>
+                <textarea rows={5}
+                  placeholder="Hotel pickup & drop-off&#10;English speaking driver&#10;Air-conditioned car&#10;Fuel&#10;All entrance fees"
                   value={form.includedText} onChange={(e) => set('includedText', e.target.value)}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 leading-relaxed font-mono text-xs" />
               </div>
               <div>
-                <label className="font-bold text-gray-900 block mb-1 text-rose-700">Not Included <span className="font-normal text-gray-500">(one item per line)</span></label>
-                <textarea rows={4} placeholder="Personal tips & souvenirs&#10;Alcoholic beverages&#10;Personal travel insurance"
+                <label className="font-bold text-rose-700 block mb-1">
+                  ✗ Not Included <span className="font-normal text-gray-500">(one item per line)</span>
+                </label>
+                <textarea rows={5}
+                  placeholder="Your meals&#10;Tickets to sites visited&#10;Personal tips"
                   value={form.notIncludedText} onChange={(e) => set('notIncludedText', e.target.value)}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 leading-relaxed font-mono text-xs" />
               </div>
             </div>
           </div>
 
-          {/* Section 5: Itinerary Schedule */}
+          {/* ── F: Itinerary (optional) ───────────────────────────────────────── */}
           <div className="space-y-4 pt-4 border-t border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">4. Itinerary Timeline Steps</h4>
-                <p className="text-[11px] text-gray-500">Add the sequence of stops and activities during the day</p>
+                <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-800">
+                  5. Itinerary / Schedule
+                  <span className="font-normal normal-case tracking-normal ml-1 text-gray-400">(optional)</span>
+                </h4>
+                <p className="text-[11px] text-gray-500">Leave empty for flexible / on-demand services like car charters.</p>
               </div>
               <button type="button" onClick={addItineraryStep}
                 className="px-3 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold text-xs rounded-xl border border-emerald-200/80 transition-colors">
                 + Add Step
               </button>
             </div>
-
-            <div className="space-y-3">
-              {itinerary.map((step, idx) => (
-                <div key={idx} className="p-3 bg-gray-50 rounded-2xl border border-gray-200/80 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                  <div className="w-full sm:w-28">
-                    <input type="text" placeholder="e.g. 08:00 AM"
-                      value={step.time} onChange={(e) => updateItineraryStep(idx, 'time', e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-amber-700 outline-none focus:border-emerald-600" />
+            {itinerary.length > 0 && (
+              <div className="space-y-3">
+                {itinerary.map((step, idx) => (
+                  <div key={idx} className="p-3 bg-gray-50 rounded-2xl border border-gray-200/80 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                    <div className="w-full sm:w-28">
+                      <input type="text" placeholder="08:00 AM"
+                        value={step.time} onChange={(e) => updateItineraryStep(idx, 'time', e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-amber-700 outline-none focus:border-emerald-600" />
+                    </div>
+                    <div className="w-full sm:w-1/3">
+                      <input type="text" placeholder="Stop Title"
+                        value={step.title} onChange={(e) => updateItineraryStep(idx, 'title', e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-900 outline-none focus:border-emerald-600" />
+                    </div>
+                    <div className="w-full sm:flex-1">
+                      <input type="text" placeholder="Short description..."
+                        value={step.description} onChange={(e) => updateItineraryStep(idx, 'description', e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-600 outline-none focus:border-emerald-600" />
+                    </div>
+                    <button type="button" onClick={() => removeItineraryStep(idx)}
+                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg shrink-0 transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-                  <div className="w-full sm:w-1/3">
-                    <input type="text" placeholder="Stop Title (e.g. Hotel Pickup)"
-                      value={step.title} onChange={(e) => updateItineraryStep(idx, 'title', e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-gray-900 outline-none focus:border-emerald-600" />
-                  </div>
-                  <div className="w-full sm:flex-1">
-                    <input type="text" placeholder="Short description / details..."
-                      value={step.description} onChange={(e) => updateItineraryStep(idx, 'description', e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs text-gray-600 outline-none focus:border-emerald-600" />
-                  </div>
-                  <button type="button" onClick={() => removeItineraryStep(idx)}
-                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg shrink-0 transition-colors" title="Delete Step">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Action buttons */}
@@ -760,7 +971,7 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
               className="px-5 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl">Cancel</button>
             <button type="submit" disabled={submitting}
               className="px-6 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-900/20 transition-all cursor-pointer disabled:opacity-60">
-              {submitting ? 'Saving...' : mode === 'add' ? 'Publish Tour Experience' : 'Save Changes'}
+              {submitting ? 'Saving...' : mode === 'add' ? '✦ Publish Listing' : 'Save Changes'}
             </button>
           </div>
         </form>
@@ -768,6 +979,7 @@ function TourFormModal({ mode, initial, onClose, onSave }: TourFormModalProps) {
     </div>
   );
 }
+
 
 function AddTeamMemberModal({
   onClose,
@@ -1124,9 +1336,10 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
       included: activity.included,
       not_included: activity.notIncluded,
       itinerary: activity.itinerary,
-      duration_hours: activity.durationHours,
-      price_original: activity.priceOriginal,
+      duration_hours: activity.durationHours ?? null,
+      price_original: activity.priceOriginal ?? null,
       price_discounted: activity.priceDiscounted,
+      price_packages: activity.pricePackages ?? null,
       rating: activity.rating,
       review_count: activity.reviewCount,
       badge: activity.badge,
