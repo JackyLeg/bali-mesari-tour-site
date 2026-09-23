@@ -2017,6 +2017,19 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
         .select('id')
         .maybeSingle();
 
+      // Fallback retry if duration_hours has a NOT NULL constraint on remote Supabase
+      if (error && error.message?.includes('duration_hours') && error.message?.includes('not-null')) {
+        console.warn("Retrying upsert with duration_hours = 0 to satisfy not-null constraint...");
+        activePayload.duration_hours = 0;
+        const retry = await supabase
+          .from('activities')
+          .upsert([activePayload], { onConflict: 'slug' })
+          .select('id')
+          .maybeSingle();
+        savedRecord = retry.data;
+        error = retry.error;
+      }
+
       // Fallback retry if price_packages column does not exist yet in Supabase
       if (error && error.message?.includes('price_packages')) {
         console.warn("Retrying upsert without 'price_packages' column...");

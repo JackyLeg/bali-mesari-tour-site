@@ -131,10 +131,17 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
           </Link>
 
           <div className="flex items-center gap-3 text-[11px] font-medium text-gray-500 mb-3">
-            <div className="flex items-center gap-1">
-              <Clock className="w-3 h-3 text-emerald-700" />
-              <span>{activity.durationHours} hrs</span>
-            </div>
+            {activity.durationHours && activity.durationHours > 0 ? (
+              <div className="flex items-center gap-1">
+                <Clock className="w-3 h-3 text-emerald-700" />
+                <span>{activity.durationHours} hrs</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <Clock className="w-3 h-3 text-emerald-700" />
+                <span>Flexible</span>
+              </div>
+            )}
             {activity.pickupAvailable && (
               <div className="flex items-center gap-1 text-emerald-700 font-semibold">
                 <CheckCircle2 className="w-3 h-3" />
