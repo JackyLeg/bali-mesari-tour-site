@@ -1270,7 +1270,7 @@ function InviteSentModal({
 }) {
   const [copied, setCopied] = useState(false);
   const [apiSending, setApiSending] = useState(false);
-  const [apiSentSuccess, setApiSentSuccess] = useState(false);
+  const [apiResult, setApiResult] = useState<{ success: boolean; sentRealEmail?: boolean; message?: string } | null>(null);
 
   const adminUrl = typeof window !== 'undefined' ? `${window.location.origin}/admin` : 'https://balimesari.com/admin';
   const tempPassword = member.tempPassword || 'MesariStaff2026!';
@@ -1314,6 +1314,7 @@ Please sign in and change your password in Settings.`;
 
   const sendViaApi = async () => {
     setApiSending(true);
+    setApiResult(null);
     try {
       const res = await fetch('/api/admin/send-invite', {
         method: 'POST',
@@ -1326,10 +1327,27 @@ Please sign in and change your password in Settings.`;
           loginUrl: adminUrl,
         }),
       });
+      const data = await res.json();
       if (res.ok) {
-        setApiSentSuccess(true);
+        setApiResult({
+          success: true,
+          sentRealEmail: data.sentRealEmail,
+          message: data.message,
+        });
+      } else {
+        setApiResult({
+          success: false,
+          sentRealEmail: false,
+          message: data.error || 'Failed to dispatch email',
+        });
       }
-    } catch (_) {}
+    } catch (err: any) {
+      setApiResult({
+        success: false,
+        sentRealEmail: false,
+        message: err?.message || 'Network error while dispatching email',
+      });
+    }
     setApiSending(false);
   };
 
@@ -1371,10 +1389,22 @@ Please sign in and change your password in Settings.`;
           </div>
         </div>
 
-        {apiSentSuccess && (
-          <div className="mb-4 p-3 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-xl flex items-center gap-2 border border-emerald-200">
-            <Check className="w-4 h-4 text-emerald-600" />
-            Verification email dispatched via system API!
+        {apiResult && (
+          <div className={`mb-4 p-3.5 text-xs font-semibold rounded-xl flex items-start gap-2.5 border ${
+            apiResult.sentRealEmail
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : apiResult.success
+              ? 'bg-blue-50 text-blue-800 border-blue-200'
+              : 'bg-red-50 text-red-800 border-red-200'
+          }`}>
+            {apiResult.sentRealEmail ? (
+              <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <Mail className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+            )}
+            <div className="leading-relaxed">
+              <strong>{apiResult.sentRealEmail ? 'Delivered via Email:' : 'Status:'}</strong> {apiResult.message}
+            </div>
           </div>
         )}
 
@@ -1395,11 +1425,11 @@ Please sign in and change your password in Settings.`;
             <button
               type="button"
               onClick={sendViaApi}
-              disabled={apiSending || apiSentSuccess}
+              disabled={apiSending || (apiResult?.sentRealEmail ?? false)}
               className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
             >
               <Mail className="w-3.5 h-3.5" />
-              <span>{apiSending ? 'Dispatching...' : apiSentSuccess ? 'Dispatched ✓' : 'Dispatch via System API'}</span>
+              <span>{apiSending ? 'Dispatching...' : apiResult?.sentRealEmail ? 'Delivered via Email ✓' : 'Send via Google / SMTP API'}</span>
             </button>
 
             <button
