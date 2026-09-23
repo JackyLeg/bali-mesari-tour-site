@@ -26,7 +26,7 @@ Your staff login details:
 ------------------------------------------
 Portal URL: ${adminUrl}
 Login Email: ${email}
-Temporary Password: ${tempPassword || email}
+Temporary Password: ${tempPassword || 'MesariStaff2026!'}
 ------------------------------------------
 
 Important:

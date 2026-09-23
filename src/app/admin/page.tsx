@@ -1101,35 +1101,16 @@ function AddTeamMemberModal({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'staff' | 'super_admin'>('staff');
-  const [useEmailAsPassword, setUseEmailAsPassword] = useState(true);
-  const [tempPassword, setTempPassword] = useState('');
+  const [tempPassword, setTempPassword] = useState(() => `Mesari_${Math.floor(1000 + Math.random() * 9000)}!`);
   const [copied, setCopied] = useState(false);
 
-  // Update tempPassword when email changes if useEmailAsPassword is true
-  const handleEmailChange = (newEmail: string) => {
-    setEmail(newEmail);
-    if (useEmailAsPassword) {
-      setTempPassword(newEmail);
-    }
-  };
-
-  const handleTogglePasswordMode = (useEmail: boolean) => {
-    setUseEmailAsPassword(useEmail);
-    if (useEmail) {
-      setTempPassword(email);
-    } else {
-      setTempPassword(`Mesari_${Math.floor(1000 + Math.random() * 9000)}!`);
-    }
-  };
-
   const generateNewPassword = () => {
-    setUseEmailAsPassword(false);
     setTempPassword(`Mesari_${Math.floor(1000 + Math.random() * 9000)}!`);
     setCopied(false);
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(tempPassword || email);
+    navigator.clipboard.writeText(tempPassword);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -1138,7 +1119,7 @@ function AddTeamMemberModal({
     e.preventDefault();
     if (!name || !email) return;
 
-    const finalPassword = (tempPassword.trim() || email.trim());
+    const finalPassword = tempPassword.trim() || `Mesari_${Math.floor(1000 + Math.random() * 9000)}!`;
 
     const newMember: TeamMember = {
       id: `team-${Date.now()}`,
@@ -1190,7 +1171,7 @@ function AddTeamMemberModal({
               required
               placeholder="e.g. kadek@balimesari.com"
               value={email}
-              onChange={(e) => handleEmailChange(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600 text-gray-900 text-xs font-semibold"
             />
           </div>
@@ -1215,34 +1196,24 @@ function AddTeamMemberModal({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="font-bold text-gray-900">Temporary Password</label>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleTogglePasswordMode(!useEmailAsPassword)}
-                  className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
-                >
-                  {useEmailAsPassword ? 'Use Random Pass' : 'Use Email as Pass'}
-                </button>
-                {!useEmailAsPassword && (
-                  <button
-                    type="button"
-                    onClick={generateNewPassword}
-                    className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 cursor-pointer"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={generateNewPassword}
+                className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1.5 cursor-pointer bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded-lg transition-colors"
+                title="Generate another temporary password"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Generate New</span>
+              </button>
             </div>
 
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                readOnly={useEmailAsPassword}
-                value={useEmailAsPassword ? (email || 'their-email@domain.com') : tempPassword}
+                value={tempPassword}
                 onChange={(e) => setTempPassword(e.target.value)}
                 placeholder="Temporary password"
-                className="w-full bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 font-mono text-xs text-amber-900 font-bold outline-none"
+                className="w-full bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5 font-mono text-xs text-amber-900 font-bold outline-none focus:border-amber-400"
               />
               <button
                 type="button"
@@ -1255,9 +1226,7 @@ function AddTeamMemberModal({
               </button>
             </div>
             <p className="text-[10px] text-gray-500 mt-1">
-              {useEmailAsPassword 
-                ? '✓ Password is set to their email address as requested. Member can change it once logged in.'
-                : 'Custom temporary password assigned.'}
+              ✓ This temporary password will be sent to <strong>{email || 'their email'}</strong> so they can log in.
             </p>
           </div>
 
@@ -1304,7 +1273,7 @@ function InviteSentModal({
   const [apiSentSuccess, setApiSentSuccess] = useState(false);
 
   const adminUrl = typeof window !== 'undefined' ? `${window.location.origin}/admin` : 'https://balimesari.com/admin';
-  const tempPassword = member.tempPassword || member.email;
+  const tempPassword = member.tempPassword || 'MesariStaff2026!';
 
   const emailSubject = encodeURIComponent('Welcome to Bali Mesari Tour Team — Your Staff Login Credentials');
   const emailBody = encodeURIComponent(
