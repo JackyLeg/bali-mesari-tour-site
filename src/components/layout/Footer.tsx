@@ -14,7 +14,7 @@ import {
 
 export default function Footer() {
   return (
-    <footer className="bg-emerald-950 text-white pt-16 pb-8 border-t border-emerald-900">
+    <footer className="bg-emerald-950 text-white pt-16 pb-8 border-t border-emerald-900 print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Trust Badges Banner */}

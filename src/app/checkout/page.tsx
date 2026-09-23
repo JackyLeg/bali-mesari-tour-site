@@ -72,6 +72,40 @@ function WiseLogo() {
   );
 }
 
+// ─── Country Calling Codes & Country Mapping ───────────────────────────────────
+const COUNTRY_DIAL_CODES = [
+  { code: '+62', country: 'Indonesia', flag: '🇮🇩' },
+  { code: '+61', country: 'Australia', flag: '🇦🇺' },
+  { code: '+1', country: 'United States', flag: '🇺🇸' },
+  { code: '+44', country: 'United Kingdom', flag: '🇬🇧' },
+  { code: '+65', country: 'Singapore', flag: '🇸🇬' },
+  { code: '+60', country: 'Malaysia', flag: '🇲🇾' },
+  { code: '+91', country: 'India', flag: '🇮🇳' },
+  { code: '+81', country: 'Japan', flag: '🇯🇵' },
+  { code: '+82', country: 'South Korea', flag: '🇰🇷' },
+  { code: '+49', country: 'Germany', flag: '🇩🇪' },
+  { code: '+33', country: 'France', flag: '🇫🇷' },
+  { code: '+31', country: 'Netherlands', flag: '🇳🇱' },
+  { code: '+64', country: 'New Zealand', flag: '🇳🇿' },
+  { code: '+86', country: 'China', flag: '🇨🇳' },
+  { code: '+852', country: 'Hong Kong', flag: '🇭🇰' },
+  { code: '+886', country: 'Taiwan', flag: '🇹🇼' },
+  { code: '+63', country: 'Philippines', flag: '🇵🇭' },
+  { code: '+66', country: 'Thailand', flag: '🇹🇭' },
+  { code: '+84', country: 'Vietnam', flag: '🇻🇳' },
+  { code: '+971', country: 'United Arab Emirates', flag: '🇦🇪' },
+  { code: '+7', country: 'Russia', flag: '🇷🇺' },
+  { code: '+39', country: 'Italy', flag: '🇮🇹' },
+  { code: '+34', country: 'Spain', flag: '🇪🇸' },
+  { code: '+41', country: 'Switzerland', flag: '🇨🇭' },
+  { code: '+46', country: 'Sweden', flag: '🇸🇪' },
+  { code: '+47', country: 'Norway', flag: '🇳🇴' },
+  { code: '+45', country: 'Denmark', flag: '🇩🇰' },
+  { code: '+27', country: 'South Africa', flag: '🇿🇦' },
+  { code: '+55', country: 'Brazil', flag: '🇧🇷' },
+  { code: '+52', country: 'Mexico', flag: '🇲🇽' },
+];
+
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -93,13 +127,23 @@ function CheckoutContent() {
   // Form states
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
-  const [country, setCountry] = useState('Australia');
+  const [countryCode, setCountryCode] = useState('+62');
+  const [phoneRest, setPhoneRest] = useState('');
+  const [country, setCountry] = useState('Indonesia');
   const [pickupHotel, setPickupHotel] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'arrival' | 'paypal' | 'wise'>('arrival');
+  const [paymentMethod, setPaymentMethod] = useState<'paypal' | 'wise'>('paypal');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // Auto-fill country of origin when country code is selected, but user can still edit
+  const handleCountryCodeChange = (newCode: string) => {
+    setCountryCode(newCode);
+    const matched = COUNTRY_DIAL_CODES.find((c) => c.code === newCode);
+    if (matched) {
+      setCountry(matched.country);
+    }
+  };
 
   // ─── Form Submission ─────────────────────────────────────────────────────────
 
@@ -116,8 +160,12 @@ function CheckoutContent() {
       setFormError('Please enter a valid email address.');
       return;
     }
-    if (!phone.trim()) {
-      setFormError('Please enter your phone number.');
+    if (!phoneRest.trim()) {
+      setFormError('Please enter your WhatsApp / phone number.');
+      return;
+    }
+    if (!country.trim()) {
+      setFormError('Please enter your country of origin.');
       return;
     }
     if (!pickupHotel.trim()) {
@@ -127,6 +175,8 @@ function CheckoutContent() {
 
     setSubmitting(true);
 
+    const fullPhone = `${countryCode} ${phoneRest.trim()}`;
+
     // ── Sanitize ALL user inputs ───────────────────────────────────────────
     // 📚 WHAT IS INPUT SANITIZATION?
     // Even though Supabase uses parameterized queries (safe from SQL injection),
@@ -134,7 +184,7 @@ function CheckoutContent() {
     // sanitizeInput() removes HTML tags, SQL special chars, and trims whitespace.
     const sanitizedName = sanitizeInput(fullName, 150);
     const sanitizedEmail = sanitizeEmail(email);
-    const sanitizedPhone = sanitizeInput(phone, 50);
+    const sanitizedPhone = sanitizeInput(fullPhone, 50);
     const sanitizedCountry = sanitizeInput(country, 100);
     const sanitizedHotel = sanitizeInput(pickupHotel, 255);
     const sanitizedRequests = sanitizeInput(specialRequests, 500);
@@ -275,9 +325,12 @@ function CheckoutContent() {
       const existing = stored ? JSON.parse(stored) : [];
       localStorage.setItem('bookings', JSON.stringify([{
         ref: bookingRef, name: sanitizedName, email: sanitizedEmail,
-        title: activityTitle, date: bookingDate,
+        title: activityTitle,
+        package: packageName,
+        date: bookingDate,
         guests: participants, total: totalPrice,
         status: 'Confirmed', hotel: sanitizedHotel,
+        phone: sanitizedPhone, country: sanitizedCountry,
       }, ...existing]));
     } catch (_) {}
 
@@ -290,7 +343,10 @@ function CheckoutContent() {
       total: totalPrice.toString(),
       name: sanitizedName,
       email: sanitizedEmail,
+      phone: sanitizedPhone,
+      country: sanitizedCountry,
       hotel: sanitizedHotel || 'Ubud Hotel Lobby',
+      ...(packageName ? { package: packageName } : {}),
     });
     router.push(`/booking/confirmation?${confirmParams.toString()}`);
   };
@@ -347,7 +403,7 @@ function CheckoutContent() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-bold text-gray-700 block mb-1">Email Address (Voucher Sent Here) *</label>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Email Address (Receipt Sent Here) *</label>
                   <input 
                     type="email"
                     required
@@ -361,22 +417,37 @@ function CheckoutContent() {
 
                 <div>
                   <label className="text-xs font-bold text-gray-700 block mb-1">WhatsApp / Phone Number *</label>
-                  <input 
-                    type="tel"
-                    required
-                    placeholder="+61 400 123 456"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    maxLength={50}
-                    className="w-full text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
-                  />
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={countryCode}
+                      onChange={(e) => handleCountryCodeChange(e.target.value)}
+                      className="w-32 sm:w-36 text-xs font-bold bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-2.5 outline-none focus:border-emerald-600 cursor-pointer shrink-0"
+                    >
+                      {COUNTRY_DIAL_CODES.map((item) => (
+                        <option key={`${item.code}-${item.country}`} value={item.code}>
+                          {item.flag} {item.code} ({item.country})
+                        </option>
+                      ))}
+                    </select>
+                    <input 
+                      type="tel"
+                      required
+                      placeholder="812 3456 7890"
+                      value={phoneRest}
+                      onChange={(e) => setPhoneRest(e.target.value.replace(/[^0-9\s-]/g, ''))}
+                      maxLength={30}
+                      className="flex-grow text-xs font-semibold bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 outline-none focus:border-emerald-600"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-gray-700 block mb-1">Country of Origin</label>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Country of Origin *</label>
                 <input 
                   type="text"
+                  required
+                  placeholder="Indonesia"
                   value={country}
                   onChange={(e) => setCountry(e.target.value)}
                   maxLength={100}
@@ -418,45 +489,20 @@ function CheckoutContent() {
               </div>
             </div>
 
-            {/* Step 3: Payment Method */}
-            {/*
-              📚 PAYMENT OPTIONS EXPLAINED:
-              - ARRIVAL: No online payment. User pays the driver in cash (USD or IDR).
-                         We just record the booking in our database.
-              - PAYPAL:  User is redirected to PayPal's website to pay.
-                         Money flows: PayPal account → Bali Mesari's PayPal → bank.
-              - WISE:    User is redirected to Wise's website to make a bank transfer.
-                         Great for international customers. Lower fees than PayPal.
-            */}
+            {/* Step 3: Payment Method (Upfront Online Only) */}
             <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
-              <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2 pb-3 border-b border-gray-100">
-                <Lock className="w-4 h-4 text-emerald-700" />
-                <span>3. Select Preferred Payment</span>
-              </h3>
+              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-emerald-700" />
+                  <span>3. Secure Online Payment</span>
+                </h3>
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                  100% Guaranteed Reservation
+                </span>
+              </div>
 
               <div className="space-y-3">
-                
-                {/* Option A: Pay on Arrival */}
-                <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
-                  paymentMethod === 'arrival' ? 'border-emerald-700 bg-emerald-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <input 
-                      type="radio" 
-                      name="payment"
-                      checked={paymentMethod === 'arrival'}
-                      onChange={() => setPaymentMethod('arrival')}
-                      className="accent-emerald-700"
-                    />
-                    <div>
-                      <span className="text-xs font-extrabold text-gray-900 block">Pay cash to driver on tour date</span>
-                      <span className="text-[11px] text-gray-500">Pay in USD or IDR directly when picked up</span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-extrabold bg-amber-400 text-emerald-950 px-2 py-0.5 rounded-md">Popular</span>
-                </label>
-
-                {/* Option B: PayPal */}
+                {/* Option 1: PayPal / Card */}
                 <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
                   paymentMethod === 'paypal' ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
                 }`}>
@@ -466,22 +512,22 @@ function CheckoutContent() {
                       name="payment"
                       checked={paymentMethod === 'paypal'}
                       onChange={() => setPaymentMethod('paypal')}
-                      className="accent-blue-600"
+                      className="accent-blue-600 cursor-pointer"
                     />
                     <div>
                       <span className="text-xs font-extrabold text-gray-900 block flex items-center gap-2">
-                        Pay with PayPal
+                        Pay with PayPal (Credit / Debit Card)
                       </span>
-                      <span className="text-[11px] text-gray-500">Secure online payment — Visa, Mastercard, PayPal balance</span>
+                      <span className="text-[11px] text-gray-500">Instant reservation — Visa, Mastercard, AMEX, PayPal balance</span>
                     </div>
                   </div>
                   {/* PayPal blue P logo */}
-                  <div className="w-8 h-8 rounded-lg bg-[#003087] flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-[#003087] flex items-center justify-center shrink-0">
                     <span className="text-white font-extrabold text-sm">P</span>
                   </div>
                 </label>
 
-                {/* Option C: Wise */}
+                {/* Option 2: Wise */}
                 <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
                   paymentMethod === 'wise' ? 'border-green-500 bg-green-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
                 }`}>
@@ -491,19 +537,18 @@ function CheckoutContent() {
                       name="payment"
                       checked={paymentMethod === 'wise'}
                       onChange={() => setPaymentMethod('wise')}
-                      className="accent-green-600"
+                      className="accent-green-600 cursor-pointer"
                     />
                     <div>
                       <span className="text-xs font-extrabold text-gray-900 block">Pay with Wise (Bank Transfer)</span>
-                      <span className="text-[11px] text-gray-500">Best for AUD, EUR, GBP → IDR. Mid-market rates, low fees.</span>
+                      <span className="text-[11px] text-gray-500">Best for AUD, EUR, GBP, SGD → IDR. Low fees, mid-market rate.</span>
                     </div>
                   </div>
                   {/* Wise logo — green */}
-                  <div className="w-8 h-8 rounded-lg bg-[#9fe870] flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-[#9fe870] flex items-center justify-center shrink-0">
                     <span className="text-[#163300] font-extrabold text-xs">W</span>
                   </div>
                 </label>
-
               </div>
 
               {/* Payment info by method */}
@@ -542,7 +587,7 @@ function CheckoutContent() {
                 </>
               ) : (
                 <>
-                  {paymentMethod === 'paypal' ? '🔒 Pay with PayPal — ' : paymentMethod === 'wise' ? '💚 Pay with Wise — ' : `✅ Confirm & Reserve — `}
+                  {paymentMethod === 'paypal' ? '🔒 Pay with PayPal — ' : '💚 Pay with Wise — '}
                   {/* Show price in user's selected currency */}
                   {format(totalPrice)}
                   {currency === 'USD' && <span className="font-normal text-emerald-300 text-[11px]">≈ {idrFormatted}</span>}
