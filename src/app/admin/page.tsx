@@ -2010,74 +2010,41 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
     try {
       let activePayload: any = { ...payload };
 
-      if (mode === 'insert') {
-        let { data: inserted, error } = await supabase
+      // Use upsert on conflict 'slug' so both new items and updates to unseeded initial activities are persisted to Supabase!
+      let { data: savedRecord, error } = await supabase
+        .from('activities')
+        .upsert([activePayload], { onConflict: 'slug' })
+        .select('id')
+        .maybeSingle();
+
+      // Fallback retry if price_packages column does not exist yet in Supabase
+      if (error && error.message?.includes('price_packages')) {
+        console.warn("Retrying upsert without 'price_packages' column...");
+        const { price_packages, ...strippedPayload } = activePayload;
+        const retry = await supabase
           .from('activities')
-          .insert([activePayload])
+          .upsert([strippedPayload], { onConflict: 'slug' })
           .select('id')
           .maybeSingle();
-
-        // Fallback retry if price_packages column does not exist yet in Supabase
-        if (error && error.message?.includes('price_packages')) {
-          console.warn("Retrying insert without 'price_packages' column...");
-          const { price_packages, ...strippedPayload } = activePayload;
-          const retry = await supabase
-            .from('activities')
-            .insert([strippedPayload])
-            .select('id')
-            .maybeSingle();
-          inserted = retry.data;
-          error = retry.error;
-        }
-
-        if (error) {
-          console.error('Supabase activities insert error:', error.message);
-          return { ok: false, error: error.message };
-        }
-        if (inserted?.id && imagesToSave.length > 0) {
-          const imageRows = imagesToSave.map((url, idx) => ({
-            activity_id: inserted.id,
-            image_url: url,
-            display_order: idx,
-          }));
-          await supabase.from('activity_images').insert(imageRows);
-        }
-      } else {
-        let { data: updated, error } = await supabase
-          .from('activities')
-          .update(activePayload)
-          .eq('slug', activity.slug)
-          .select('id')
-          .maybeSingle();
-
-        // Fallback retry if price_packages column does not exist yet in Supabase
-        if (error && error.message?.includes('price_packages')) {
-          console.warn("Retrying update without 'price_packages' column...");
-          const { price_packages, ...strippedPayload } = activePayload;
-          const retry = await supabase
-            .from('activities')
-            .update(strippedPayload)
-            .eq('slug', activity.slug)
-            .select('id')
-            .maybeSingle();
-          updated = retry.data;
-          error = retry.error;
-        }
-
-        if (error) {
-          console.error('Supabase activities update error:', error.message);
-          return { ok: false, error: error.message };
-        }
-        if (updated?.id && imagesToSave.length > 0) {
-          await supabase.from('activity_images').delete().eq('activity_id', updated.id);
-          const imageRows = imagesToSave.map((url, idx) => ({
-            activity_id: updated.id,
-            image_url: url,
-            display_order: idx,
-          }));
-          await supabase.from('activity_images').insert(imageRows);
-        }
+        savedRecord = retry.data;
+        error = retry.error;
       }
+
+      if (error) {
+        console.error('Supabase activities upsert error:', error.message);
+        return { ok: false, error: error.message };
+      }
+
+      if (savedRecord?.id && imagesToSave.length > 0) {
+        await supabase.from('activity_images').delete().eq('activity_id', savedRecord.id);
+        const imageRows = imagesToSave.map((url, idx) => ({
+          activity_id: savedRecord.id,
+          image_url: url,
+          display_order: idx,
+        }));
+        await supabase.from('activity_images').insert(imageRows);
+      }
+
       return { ok: true };
     } catch (err: any) {
       console.error('Failed to sync activity to Supabase:', err);
@@ -2086,9 +2053,7 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
   };
 
   const saveCustomLocally = (list: Activity[]) => {
-    const initialSlugs = new Set(INITIAL_ACTIVITIES.map((a) => a.slug));
-    const custom = list.filter((a) => !initialSlugs.has(a.slug));
-    try { localStorage.setItem('custom_activities', JSON.stringify(custom)); } catch (_) {}
+    try { localStorage.setItem('custom_activities', JSON.stringify(list)); } catch (_) {}
   };
 
   // ── CREATE TOUR ──

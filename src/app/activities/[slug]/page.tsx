@@ -21,10 +21,13 @@ import {
   Share2, 
   Heart,
   ChevronRight,
+  ChevronLeft,
+  Maximize2,
   Info,
   MessageSquarePlus,
   X
 } from 'lucide-react';
+import { useCurrency } from '@/lib/currency';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 function WriteReviewModal({
@@ -230,6 +233,16 @@ export default function ActivityDetailPage() {
   const [similarActivities, setSimilarActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Currency & Formatter
+  const { format, currency } = useCurrency();
+
+  // Carousel & Lightbox State
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Selected Package Tier State
+  const [selectedPackageIndex, setSelectedPackageIndex] = useState<number>(0);
+
   // Booking Widget State
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [participants, setParticipants] = useState<number>(2);
@@ -328,7 +341,20 @@ export default function ActivityDetailPage() {
     );
   }
 
-  const totalPrice = activity.priceDiscounted * participants;
+  const images = (activity.images && activity.images.length > 0)
+    ? activity.images
+    : ['https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80'];
+
+  const hasPackages = Boolean(activity.pricePackages && activity.pricePackages.length > 0);
+  const currentPackage = hasPackages && activity.pricePackages
+    ? (activity.pricePackages[selectedPackageIndex] || activity.pricePackages[0])
+    : null;
+
+  const unitPrice = currentPackage ? currentPackage.price : activity.priceDiscounted;
+  const isFlatPrice = currentPackage
+    ? (currentPackage.unit.includes('car') || currentPackage.unit.includes('group') || currentPackage.unit.includes('boat'))
+    : false;
+  const totalPrice = isFlatPrice ? unitPrice : (unitPrice * participants);
 
   const handleBookNow = () => {
     const bookingParams = new URLSearchParams({
@@ -337,9 +363,14 @@ export default function ActivityDetailPage() {
       slug: activity.slug,
       date: selectedDate,
       participants: participants.toString(),
-      pricePerPerson: activity.priceDiscounted.toString(),
+      pricePerPerson: unitPrice.toString(),
       totalPrice: totalPrice.toString(),
-      pickup: includePickup ? 'yes' : 'no'
+      pickup: includePickup ? 'yes' : 'no',
+      ...(currentPackage ? {
+        packageName: currentPackage.name,
+        packageDescription: currentPackage.description || '',
+        packageUnit: currentPackage.unit || '/ person',
+      } : {}),
     });
     router.push(`/checkout?${bookingParams.toString()}`);
   };
@@ -379,40 +410,105 @@ export default function ActivityDetailPage() {
           </div>
         </div>
 
-        {/* Hero Gallery Grid */}
+        {/* Interactive Image Showcase & Carousel */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 rounded-3xl overflow-hidden shadow-lg aspect-[16/9] lg:aspect-[21/9]">
-            <div className="lg:col-span-2 relative h-full bg-gray-200">
+          <div className="relative rounded-3xl overflow-hidden shadow-2xl bg-neutral-900 border border-neutral-800">
+            
+            {/* Ambient Blurred Background (matches current picture tone) */}
+            <div 
+              className="absolute inset-0 bg-cover bg-center blur-2xl opacity-25 scale-110 pointer-events-none transition-all duration-700"
+              style={{ backgroundImage: `url(${images[currentImageIndex]})` }}
+            />
+
+            {/* Main Image Display Stage (object-contain ensures original uncropped aspect ratio) */}
+            <div className="relative z-10 w-full flex items-center justify-center min-h-[340px] sm:min-h-[440px] lg:min-h-[500px] max-h-[560px] p-2 sm:p-4">
               <img 
-                src={activity.images[0]} 
-                alt={activity.title}
-                className="w-full h-full object-cover"
+                src={images[currentImageIndex]} 
+                alt={`${activity.title} - Photo ${currentImageIndex + 1}`}
+                onClick={() => setLightboxOpen(true)}
+                className="max-h-[320px] sm:max-h-[420px] lg:max-h-[480px] w-auto max-w-full object-contain mx-auto rounded-2xl shadow-xl transition-all duration-300 cursor-zoom-in hover:brightness-105"
               />
+
+              {/* Badge Overlay */}
               {activity.badge && (
-                <div className="absolute top-4 left-4">
-                  <span className="text-xs font-extrabold px-3 py-1.5 rounded-full bg-amber-400 text-emerald-950 shadow-md">
+                <div className="absolute top-4 left-4 z-20">
+                  <span className="text-xs font-extrabold px-3 py-1.5 rounded-full bg-amber-400 text-emerald-950 shadow-lg">
                     {activity.badge}
                   </span>
                 </div>
               )}
+
+              {/* Top Right Controls: Photo Counter & Fullscreen Lightbox Button */}
+              <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+                <span className="text-xs font-bold text-white bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 shadow-md">
+                  📷 {currentImageIndex + 1} / {images.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setLightboxOpen(true)}
+                  className="p-2 bg-black/60 hover:bg-black/80 text-white rounded-xl backdrop-blur-md border border-white/20 transition-all hover:scale-105 cursor-pointer"
+                  title="View full natural photo"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Carousel Previous & Next Controls (shown if > 1 image) */}
+              {images.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1));
+                    }}
+                    className="absolute left-3 sm:left-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-black/50 hover:bg-black/80 text-white flex items-center justify-center backdrop-blur-md border border-white/20 shadow-lg transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                    aria-label="Previous photo"
+                  >
+                    <ChevronLeft className="w-6 h-6" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCurrentImageIndex((prev) => (prev === images.length - 1 ? 0 : prev + 1));
+                    }}
+                    className="absolute right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-black/50 hover:bg-black/80 text-white flex items-center justify-center backdrop-blur-md border border-white/20 shadow-lg transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                    aria-label="Next photo"
+                  >
+                    <ChevronRight className="w-6 h-6" />
+                  </button>
+                </>
+              )}
             </div>
 
-            <div className="hidden lg:grid grid-rows-2 gap-3 h-full">
-              <div className="relative h-full bg-gray-200 overflow-hidden">
-                <img 
-                  src={activity.images[1] || activity.images[0]} 
-                  alt={activity.title}
-                  className="w-full h-full object-cover"
-                />
+            {/* Thumbnail Navigation Strip (for all images, especially when 3 or more) */}
+            {images.length > 1 && (
+              <div className="relative z-10 bg-black/40 backdrop-blur-md border-t border-white/10 px-4 py-3">
+                <div className="flex items-center gap-2.5 overflow-x-auto pb-1 max-w-full scrollbar-thin">
+                  {images.map((img, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setCurrentImageIndex(idx)}
+                      className={`relative shrink-0 rounded-xl overflow-hidden transition-all duration-200 cursor-pointer ${
+                        currentImageIndex === idx 
+                          ? 'ring-3 ring-amber-400 scale-105 opacity-100 shadow-md' 
+                          : 'opacity-50 hover:opacity-100 hover:scale-102 ring-1 ring-white/20'
+                      }`}
+                    >
+                      <img 
+                        src={img} 
+                        alt={`Thumbnail ${idx + 1}`}
+                        className="w-16 h-12 sm:w-20 sm:h-14 object-cover" 
+                      />
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="relative h-full bg-gray-200 overflow-hidden">
-                <img 
-                  src={activity.images[2] || activity.images[0]} 
-                  alt={activity.title}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            </div>
+            )}
+
           </div>
         </div>
 
@@ -597,17 +693,21 @@ export default function ActivityDetailPage() {
                 {/* Price Display */}
                 <div className="flex items-baseline justify-between pb-4 border-b border-gray-100">
                   <div>
-                    <span className="text-[10px] font-bold uppercase text-gray-400 block">Starting From</span>
+                    <span className="text-[10px] font-bold uppercase text-gray-400 block">
+                      {currentPackage ? 'Selected Package Rate' : 'Starting From'}
+                    </span>
                     <div className="flex items-baseline gap-2">
-                      {activity.priceOriginal && (
+                      {!currentPackage && activity.priceOriginal && (
                         <span className="text-sm text-gray-400 line-through font-medium">
-                          ${activity.priceOriginal}
+                          {format(activity.priceOriginal)}
                         </span>
                       )}
                       <span className="text-3xl font-extrabold text-emerald-900">
-                        ${activity.priceDiscounted}
+                        {format(unitPrice)}
                       </span>
-                      <span className="text-xs text-gray-500">/ person</span>
+                      <span className="text-xs text-gray-500">
+                        {currentPackage ? currentPackage.unit : '/ person'}
+                      </span>
                     </div>
                   </div>
 
@@ -619,6 +719,67 @@ export default function ActivityDetailPage() {
                 {/* Booking Options Form */}
                 <div className="space-y-4">
                   
+                  {/* Select Package (when admin lists multiple packages) */}
+                  {hasPackages && activity.pricePackages && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Choose Tour Package</span>
+                        </label>
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          {activity.pricePackages.length} Packages Available
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {activity.pricePackages.map((pkg, idx) => {
+                          const isSelected = selectedPackageIndex === idx;
+                          return (
+                            <div
+                              key={idx}
+                              onClick={() => setSelectedPackageIndex(idx)}
+                              className={`p-3 rounded-2xl border-2 transition-all cursor-pointer relative ${
+                                isSelected
+                                  ? 'border-emerald-700 bg-emerald-50/70 shadow-sm'
+                                  : 'border-gray-200 bg-white hover:border-emerald-300 hover:bg-gray-50/50'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-2.5">
+                                  <div className={`w-4 h-4 rounded-full mt-0.5 flex items-center justify-center border transition-all shrink-0 ${
+                                    isSelected ? 'border-emerald-700 bg-emerald-700' : 'border-gray-400 bg-white'
+                                  }`}>
+                                    {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                  </div>
+                                  <div>
+                                    <span className={`text-xs font-bold block leading-tight ${isSelected ? 'text-emerald-950 font-extrabold' : 'text-gray-800'}`}>
+                                      {pkg.name}
+                                    </span>
+                                    {pkg.description && (
+                                      <p className="text-[11px] text-gray-500 mt-0.5 leading-snug">
+                                        {pkg.description}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="text-right shrink-0">
+                                  <span className={`text-sm font-extrabold block ${isSelected ? 'text-emerald-800' : 'text-gray-900'}`}>
+                                    {format(pkg.price)}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400 font-semibold block">
+                                    {pkg.unit || '/ person'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Select Date */}
                   <div>
                     <label className="text-xs font-bold text-gray-700 block mb-1.5 flex items-center gap-1">
@@ -635,17 +796,24 @@ export default function ActivityDetailPage() {
 
                   {/* Select Participants */}
                   <div>
-                    <label className="text-xs font-bold text-gray-700 block mb-1.5 flex items-center gap-1">
-                      <Users className="w-3.5 h-3.5 text-emerald-700" />
-                      <span>Number of Participants</span>
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-gray-700 flex items-center gap-1">
+                        <Users className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Number of Participants</span>
+                      </label>
+                      {isFlatPrice && (
+                        <span className="text-[10px] text-emerald-700 font-semibold">
+                          (Price covers whole group/car)
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl p-2">
                       <span className="text-xs font-semibold text-gray-800 ml-2">Guests</span>
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
                           onClick={() => setParticipants(Math.max(1, participants - 1))}
-                          className="w-7 h-7 rounded-lg bg-white border border-gray-200 text-gray-700 font-bold hover:bg-gray-100 flex items-center justify-center text-sm"
+                          className="w-7 h-7 rounded-lg bg-white border border-gray-200 text-gray-700 font-bold hover:bg-gray-100 flex items-center justify-center text-sm cursor-pointer"
                         >
                           -
                         </button>
@@ -653,7 +821,7 @@ export default function ActivityDetailPage() {
                         <button
                           type="button"
                           onClick={() => setParticipants(participants + 1)}
-                          className="w-7 h-7 rounded-lg bg-white border border-gray-200 text-gray-700 font-bold hover:bg-gray-100 flex items-center justify-center text-sm"
+                          className="w-7 h-7 rounded-lg bg-white border border-gray-200 text-gray-700 font-bold hover:bg-gray-100 flex items-center justify-center text-sm cursor-pointer"
                         >
                           +
                         </button>
@@ -680,15 +848,26 @@ export default function ActivityDetailPage() {
                 </div>
 
                 {/* Total Summary */}
-                <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-600">Total Price</span>
-                  <span className="text-2xl font-extrabold text-emerald-900">${totalPrice}</span>
+                <div className="pt-4 border-t border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-gray-600 block">Total Price</span>
+                      <span className="text-[11px] text-gray-400">
+                        {isFlatPrice 
+                          ? `Flat package rate (${participants} guest${participants > 1 ? 's' : ''})`
+                          : `Calculated for ${participants} guest${participants > 1 ? 's' : ''}`}
+                      </span>
+                    </div>
+                    <span className="text-2xl font-extrabold text-emerald-900">
+                      {format(totalPrice)}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Primary CTA */}
                 <button
                   onClick={handleBookNow}
-                  className="w-full py-3.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-emerald-900/20 transition-all hover:scale-[1.01] active:scale-[0.99]"
+                  className="w-full py-3.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-2xl shadow-lg shadow-emerald-900/20 transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
                 >
                   Book Experience Now
                 </button>
@@ -727,17 +906,94 @@ export default function ActivityDetailPage() {
 
       {/* Mobile Sticky Bottom CTA Bar */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-gray-200 p-4 shadow-2xl flex items-center justify-between">
-        <div>
-          <span className="text-[10px] uppercase font-bold text-gray-400 block">Total ({participants} guests)</span>
-          <span className="text-xl font-extrabold text-emerald-900">${totalPrice}</span>
+        <div className="max-w-[65%]">
+          <span className="text-[10px] uppercase font-bold text-gray-400 block truncate">
+            {currentPackage ? currentPackage.name : `Total (${participants} guests)`}
+          </span>
+          <span className="text-xl font-extrabold text-emerald-900">
+            {format(totalPrice)}
+          </span>
         </div>
         <button
           onClick={handleBookNow}
-          className="px-6 py-3 bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-md"
+          className="px-6 py-3 bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer shrink-0"
         >
           Book Now
         </button>
       </div>
+
+      {/* Fullscreen Image Lightbox Modal */}
+      {lightboxOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 animate-in fade-in duration-200 cursor-pointer"
+          onClick={() => setLightboxOpen(false)}
+        >
+          {/* Lightbox Header */}
+          <div className="flex items-center justify-between text-white max-w-7xl mx-auto w-full pt-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-gray-300">
+                Photo {currentImageIndex + 1} of {images.length}
+              </span>
+              <span className="text-xs text-amber-400 font-semibold">• Natural Aspect Ratio</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(false)}
+              className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Lightbox Image Stage */}
+          <div className="relative flex-grow flex items-center justify-center p-2" onClick={(e) => e.stopPropagation()}>
+            <img 
+              src={images[currentImageIndex]} 
+              alt={activity.title}
+              className="max-h-[80vh] max-w-[95vw] object-contain rounded-2xl shadow-2xl select-none"
+            />
+
+            {images.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setCurrentImageIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1))}
+                  className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/25 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                  aria-label="Previous"
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentImageIndex((prev) => (prev === images.length - 1 ? 0 : prev + 1))}
+                  className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/25 text-white flex items-center justify-center backdrop-blur-md border border-white/20 transition-all hover:scale-110 active:scale-95 cursor-pointer"
+                  aria-label="Next"
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Lightbox Footer Thumbnails */}
+          {images.length > 1 && (
+            <div className="max-w-4xl mx-auto w-full pb-2 overflow-x-auto flex items-center justify-center gap-2" onClick={(e) => e.stopPropagation()}>
+              {images.map((img, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setCurrentImageIndex(idx)}
+                  className={`relative shrink-0 rounded-lg overflow-hidden transition-all cursor-pointer ${
+                    currentImageIndex === idx ? 'ring-2 ring-amber-400 scale-105 opacity-100' : 'opacity-40 hover:opacity-80'
+                  }`}
+                >
+                  <img src={img} alt={`Thumb ${idx + 1}`} className="w-12 h-9 object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Toast Notification */}
       {toastMsg && (

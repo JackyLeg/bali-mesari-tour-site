@@ -607,6 +607,7 @@ export async function getActivities(params?: {
             meetingPoint: row.meeting_point || 'Lobby of your accommodation',
             priceOriginal: Number(row.price_original) || Number(row.price_discounted),
             priceDiscounted: Number(row.price_discounted) || 0,
+            pricePackages: row.price_packages || undefined,
             rating: Number(row.rating) || 5.0,
             reviewCount: Number(row.review_count) || 0,
             cancellationPolicy: row.cancellation_policy || 'Free cancellation up to 24 hours in advance',

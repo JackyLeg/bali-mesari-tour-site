@@ -86,6 +86,9 @@ function CheckoutContent() {
   const pricePerPerson = Number(searchParams.get('pricePerPerson') || 35);
   const totalPrice = Number(searchParams.get('totalPrice') || pricePerPerson * participants);
   const includePickup = searchParams.get('pickup') === 'yes';
+  const packageName = searchParams.get('packageName') || '';
+  const packageDescription = searchParams.get('packageDescription') || '';
+  const packageUnit = searchParams.get('packageUnit') || '';
 
   // Form states
   const [fullName, setFullName] = useState('');
@@ -558,6 +561,21 @@ function CheckoutContent() {
 
               <div>
                 <h4 className="text-xs font-bold text-gray-900 line-clamp-2 leading-snug">{activityTitle}</h4>
+                {packageName && (
+                  <div className="mt-2.5 p-2.5 bg-emerald-50 rounded-xl border border-emerald-200">
+                    <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider block">
+                      Selected Package:
+                    </span>
+                    <span className="text-xs font-extrabold text-emerald-950 block mt-0.5">
+                      {packageName}
+                    </span>
+                    {packageDescription && (
+                      <span className="text-[11px] text-emerald-700 block mt-0.5 leading-snug">
+                        {packageDescription}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2 text-xs font-medium text-gray-600 pt-2 border-t border-gray-100">
@@ -572,7 +590,7 @@ function CheckoutContent() {
                 <div className="flex justify-between">
                   <span>Rate:</span>
                   {/* 📚 format() converts USD price to user's selected currency */}
-                  <span>{format(pricePerPerson)} × {participants}</span>
+                  <span>{format(pricePerPerson)} {packageUnit ? `(${packageUnit})` : `× ${participants}`}</span>
                 </div>
               </div>
 
