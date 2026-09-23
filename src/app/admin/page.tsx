@@ -2008,12 +2008,27 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
     const imagesToSave = (activity.images && activity.images.length > 0) ? activity.images : [];
 
     try {
+      let activePayload: any = { ...payload };
+
       if (mode === 'insert') {
-        const { data: inserted, error } = await supabase
+        let { data: inserted, error } = await supabase
           .from('activities')
-          .insert([payload])
+          .insert([activePayload])
           .select('id')
           .maybeSingle();
+
+        // Fallback retry if price_packages column does not exist yet in Supabase
+        if (error && error.message?.includes('price_packages')) {
+          console.warn("Retrying insert without 'price_packages' column...");
+          const { price_packages, ...strippedPayload } = activePayload;
+          const retry = await supabase
+            .from('activities')
+            .insert([strippedPayload])
+            .select('id')
+            .maybeSingle();
+          inserted = retry.data;
+          error = retry.error;
+        }
 
         if (error) {
           console.error('Supabase activities insert error:', error.message);
@@ -2028,12 +2043,26 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
           await supabase.from('activity_images').insert(imageRows);
         }
       } else {
-        const { data: updated, error } = await supabase
+        let { data: updated, error } = await supabase
           .from('activities')
-          .update(payload)
+          .update(activePayload)
           .eq('slug', activity.slug)
           .select('id')
           .maybeSingle();
+
+        // Fallback retry if price_packages column does not exist yet in Supabase
+        if (error && error.message?.includes('price_packages')) {
+          console.warn("Retrying update without 'price_packages' column...");
+          const { price_packages, ...strippedPayload } = activePayload;
+          const retry = await supabase
+            .from('activities')
+            .update(strippedPayload)
+            .eq('slug', activity.slug)
+            .select('id')
+            .maybeSingle();
+          updated = retry.data;
+          error = retry.error;
+        }
 
         if (error) {
           console.error('Supabase activities update error:', error.message);
