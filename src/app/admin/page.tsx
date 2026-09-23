@@ -1404,6 +1404,11 @@ Please sign in and change your password in Settings.`;
             )}
             <div className="leading-relaxed">
               <strong>{apiResult.sentRealEmail ? 'Delivered via Email:' : 'Status:'}</strong> {apiResult.message}
+              {apiResult.sentRealEmail && (
+                <div className="text-[11px] text-emerald-700/90 mt-1 font-normal">
+                  💡 Tip: If not in your primary inbox, please check the <strong>Spam / Junk</strong> folder (Yahoo Mail often filters automated emails there).
+                </div>
+              )}
             </div>
           </div>
         )}

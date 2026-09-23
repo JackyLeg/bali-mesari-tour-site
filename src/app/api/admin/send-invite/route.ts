@@ -38,10 +38,12 @@ function getEmailTransporter() {
   if (gmailUser && gmailPass) {
     return {
       transporter: nodemailer.createTransport({
-        service: 'gmail',
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
           user: gmailUser,
-          pass: gmailPass,
+          pass: gmailPass.replace(/\s+/g, ''), // Strip spaces if user pasted 'xxxx xxxx xxxx xxxx'
         },
       }),
       sender: gmailUser,
@@ -208,19 +210,20 @@ Bali Mesari Tour Administration Team
 
     if (emailSetup) {
       try {
-        await emailSetup.transporter.sendMail({
+        const info = await emailSetup.transporter.sendMail({
           from: `"Bali Mesari Tour" <${emailSetup.sender}>`,
+          replyTo: emailSetup.sender,
           to: email,
           subject: emailSubject,
           text: textContent,
           html: htmlContent,
         });
         sentRealEmail = true;
-        deliveryMessage = `Direct email successfully delivered to ${email} via ${emailSetup.authType}`;
-        console.log(`[STAFF_INVITE] Sent real email to ${email} using ${emailSetup.authType}`);
+        deliveryMessage = `Direct email successfully dispatched to ${email} via ${emailSetup.authType}`;
+        console.log(`[STAFF_INVITE] Sent real email to ${email} using ${emailSetup.authType}. MessageID: ${info.messageId}`);
       } catch (sendError: any) {
         console.error('[STAFF_INVITE] Failed to send via transporter:', sendError);
-        deliveryMessage = `SMTP/OAuth error: ${sendError.message || 'Check email credentials'}`;
+        deliveryMessage = `SMTP error: ${sendError.message || 'Check email credentials'}`;
       }
     } else {
       console.log(`[STAFF_INVITE] No Google/SMTP credentials configured in .env.local. Prepared credentials for ${email}.`);
