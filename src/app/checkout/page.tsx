@@ -29,7 +29,7 @@
 
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
@@ -74,36 +74,36 @@ function WiseLogo() {
 
 // ─── Country Calling Codes & Country Mapping ───────────────────────────────────
 const COUNTRY_DIAL_CODES = [
-  { code: '+62', country: 'Indonesia', flag: '🇮🇩' },
-  { code: '+61', country: 'Australia', flag: '🇦🇺' },
-  { code: '+1', country: 'United States', flag: '🇺🇸' },
-  { code: '+44', country: 'United Kingdom', flag: '🇬🇧' },
-  { code: '+65', country: 'Singapore', flag: '🇸🇬' },
-  { code: '+60', country: 'Malaysia', flag: '🇲🇾' },
-  { code: '+91', country: 'India', flag: '🇮🇳' },
-  { code: '+81', country: 'Japan', flag: '🇯🇵' },
-  { code: '+82', country: 'South Korea', flag: '🇰🇷' },
-  { code: '+49', country: 'Germany', flag: '🇩🇪' },
-  { code: '+33', country: 'France', flag: '🇫🇷' },
-  { code: '+31', country: 'Netherlands', flag: '🇳🇱' },
-  { code: '+64', country: 'New Zealand', flag: '🇳🇿' },
-  { code: '+86', country: 'China', flag: '🇨🇳' },
-  { code: '+852', country: 'Hong Kong', flag: '🇭🇰' },
-  { code: '+886', country: 'Taiwan', flag: '🇹🇼' },
-  { code: '+63', country: 'Philippines', flag: '🇵🇭' },
-  { code: '+66', country: 'Thailand', flag: '🇹🇭' },
-  { code: '+84', country: 'Vietnam', flag: '🇻🇳' },
-  { code: '+971', country: 'United Arab Emirates', flag: '🇦🇪' },
-  { code: '+7', country: 'Russia', flag: '🇷🇺' },
-  { code: '+39', country: 'Italy', flag: '🇮🇹' },
-  { code: '+34', country: 'Spain', flag: '🇪🇸' },
-  { code: '+41', country: 'Switzerland', flag: '🇨🇭' },
-  { code: '+46', country: 'Sweden', flag: '🇸🇪' },
-  { code: '+47', country: 'Norway', flag: '🇳🇴' },
-  { code: '+45', country: 'Denmark', flag: '🇩🇰' },
-  { code: '+27', country: 'South Africa', flag: '🇿🇦' },
-  { code: '+55', country: 'Brazil', flag: '🇧🇷' },
-  { code: '+52', country: 'Mexico', flag: '🇲🇽' },
+  { code: '+62', country: 'Indonesia', flag: '🇮🇩', iso: 'ID' },
+  { code: '+61', country: 'Australia', flag: '🇦🇺', iso: 'AU' },
+  { code: '+1', country: 'United States', flag: '🇺🇸', iso: 'US' },
+  { code: '+44', country: 'United Kingdom', flag: '🇬🇧', iso: 'GB' },
+  { code: '+65', country: 'Singapore', flag: '🇸🇬', iso: 'SG' },
+  { code: '+60', country: 'Malaysia', flag: '🇲🇾', iso: 'MY' },
+  { code: '+91', country: 'India', flag: '🇮🇳', iso: 'IN' },
+  { code: '+81', country: 'Japan', flag: '🇯🇵', iso: 'JP' },
+  { code: '+82', country: 'South Korea', flag: '🇰🇷', iso: 'KR' },
+  { code: '+49', country: 'Germany', flag: '🇩🇪', iso: 'DE' },
+  { code: '+33', country: 'France', flag: '🇫🇷', iso: 'FR' },
+  { code: '+31', country: 'Netherlands', flag: '🇳🇱', iso: 'NL' },
+  { code: '+64', country: 'New Zealand', flag: '🇳🇿', iso: 'NZ' },
+  { code: '+86', country: 'China', flag: '🇨🇳', iso: 'CN' },
+  { code: '+852', country: 'Hong Kong', flag: '🇭🇰', iso: 'HK' },
+  { code: '+886', country: 'Taiwan', flag: '🇹🇼', iso: 'TW' },
+  { code: '+63', country: 'Philippines', flag: '🇵🇭', iso: 'PH' },
+  { code: '+66', country: 'Thailand', flag: '🇹🇭', iso: 'TH' },
+  { code: '+84', country: 'Vietnam', flag: '🇻🇳', iso: 'VN' },
+  { code: '+971', country: 'United Arab Emirates', flag: '🇦🇪', iso: 'AE' },
+  { code: '+7', country: 'Russia', flag: '🇷🇺', iso: 'RU' },
+  { code: '+39', country: 'Italy', flag: '🇮🇹', iso: 'IT' },
+  { code: '+34', country: 'Spain', flag: '🇪🇸', iso: 'ES' },
+  { code: '+41', country: 'Switzerland', flag: '🇨🇭', iso: 'CH' },
+  { code: '+46', country: 'Sweden', flag: '🇸🇪', iso: 'SE' },
+  { code: '+47', country: 'Norway', flag: '🇳🇴', iso: 'NO' },
+  { code: '+45', country: 'Denmark', flag: '🇩🇰', iso: 'DK' },
+  { code: '+27', country: 'South Africa', flag: '🇿🇦', iso: 'ZA' },
+  { code: '+55', country: 'Brazil', flag: '🇧🇷', iso: 'BR' },
+  { code: '+52', country: 'Mexico', flag: '🇲🇽', iso: 'MX' },
 ];
 
 function CheckoutContent() {
@@ -135,6 +135,31 @@ function CheckoutContent() {
   const [paymentMethod, setPaymentMethod] = useState<'paypal' | 'wise'>('paypal');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+
+  // 🌍 Smart Auto-Detect: Detect visitor's country by IP location on mount
+  useEffect(() => {
+    async function autoDetectLocation() {
+      try {
+        const res = await fetch('https://ipapi.co/json/');
+        if (res.ok) {
+          const data = await res.json();
+          const matched = COUNTRY_DIAL_CODES.find(
+            (c) => (data.country_code && c.iso === data.country_code) || (data.country_calling_code && c.code === data.country_calling_code)
+          );
+          if (matched) {
+            setCountryCode(matched.code);
+            setCountry(matched.country);
+          } else if (data.country_calling_code) {
+            setCountryCode(data.country_calling_code);
+            if (data.country_name) setCountry(data.country_name);
+          }
+        }
+      } catch (_) {
+        // Fallback remains Indonesia (+62) if offline or request is blocked
+      }
+    }
+    autoDetectLocation();
+  }, []);
 
   // Auto-fill country of origin when country code is selected, but user can still edit
   const handleCountryCodeChange = (newCode: string) => {
