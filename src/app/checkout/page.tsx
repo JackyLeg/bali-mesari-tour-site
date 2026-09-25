@@ -72,25 +72,6 @@ function WiseLogo() {
   );
 }
 
-// ─── DOKU Logo ────────────────────────────────────────────────────────────────
-function DokuLogo() {
-  return (
-    <div className="flex items-center gap-1.5 shrink-0">
-      <div className="px-2 py-0.5 rounded-md bg-[#E1251B] text-white font-extrabold text-[11px] tracking-wider shadow-xs">
-        DOKU
-      </div>
-      <div className="hidden sm:flex items-center gap-1">
-        <span className="text-[9px] font-extrabold bg-red-100 text-red-800 px-1 py-0.5 rounded border border-red-200">
-          QRIS
-        </span>
-        <span className="text-[9px] font-extrabold bg-blue-50 text-blue-800 px-1 py-0.5 rounded border border-blue-200">
-          VA
-        </span>
-      </div>
-    </div>
-  );
-}
-
 // ─── Country Calling Codes & Country Mapping ───────────────────────────────────
 const COUNTRY_DIAL_CODES = [
   { code: '+62', country: 'Indonesia', flag: '🇮🇩', iso: 'ID' },
@@ -143,10 +124,6 @@ function CheckoutContent() {
   const packageDescription = searchParams.get('packageDescription') || '';
   const packageUnit = searchParams.get('packageUnit') || '';
 
-  // ─── IDR equivalent display ───────────────────────────────────────────────
-  const idrTotal = Math.round(totalPrice * (rate || 16200));
-  const idrFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(idrTotal);
-
   // Form states
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -155,7 +132,7 @@ function CheckoutContent() {
   const [country, setCountry] = useState('Indonesia');
   const [pickupHotel, setPickupHotel] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'doku' | 'paypal' | 'wise'>('doku');
+  const [paymentMethod, setPaymentMethod] = useState<'paypal' | 'wise'>('paypal');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -238,68 +215,6 @@ function CheckoutContent() {
     const sanitizedRequests = sanitizeInput(specialRequests, 500);
 
     const bookingRef = 'BMT-' + Math.floor(100000 + Math.random() * 900000);
-
-    // ── Handle DOKU Payment (QRIS, Virtual Account, Cards) ─────────────────
-    if (paymentMethod === 'doku') {
-      try {
-        const res = await fetch('/api/payment/doku', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            amount: totalPrice,
-            amountIdr: idrTotal,
-            bookingRef,
-            activityTitle: sanitizeInput(activityTitle, 100),
-            packageName,
-            bookingDate,
-            participants,
-            guestName: sanitizedName,
-            guestEmail: sanitizedEmail,
-            guestPhone: sanitizedPhone,
-            guestCountry: sanitizedCountry,
-            pickupHotel: sanitizedHotel,
-            specialRequests: sanitizedRequests,
-          }),
-        });
-        const data = await res.json();
-
-        if (data.error) {
-          setFormError(data.error);
-          setSubmitting(false);
-          return;
-        }
-
-        // Save booking reference to localStorage so confirmation page can retrieve it
-        try {
-          localStorage.setItem('pending_booking_ref', bookingRef);
-          localStorage.setItem('pending_booking_data', JSON.stringify({
-            ref: bookingRef,
-            name: sanitizedName,
-            email: sanitizedEmail,
-            title: activityTitle,
-            package: packageName,
-            date: bookingDate,
-            guests: participants,
-            total: totalPrice,
-            hotel: sanitizedHotel,
-            paymentMethod: 'doku',
-          }));
-        } catch {}
-
-        if (data.paymentUrl) {
-          window.location.href = data.paymentUrl;
-          return;
-        }
-
-        setFormError('Failed to initialize DOKU checkout. Please try again.');
-        setSubmitting(false);
-        return;
-      } catch (err) {
-        setFormError('Could not connect to DOKU. Please try another payment method.');
-        setSubmitting(false);
-        return;
-      }
-    }
 
     // ── Handle PayPal Payment ──────────────────────────────────────────────
     if (paymentMethod === 'paypal') {
@@ -461,6 +376,10 @@ function CheckoutContent() {
     router.push(`/booking/confirmation?${confirmParams.toString()}`);
   };
 
+  // ─── IDR equivalent display ───────────────────────────────────────────────
+  const idrTotal = Math.round(totalPrice * rate);
+  const idrFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(idrTotal);
+
   return (
     <div className="pt-24 pb-20 min-h-screen bg-gray-50">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -608,38 +527,9 @@ function CheckoutContent() {
               </div>
 
               <div className="space-y-3">
-                {/* Option 1: DOKU (QRIS, VA, Cards) */}
+                {/* Option 1: PayPal / Card */}
                 <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
-                  paymentMethod === 'doku' ? 'border-red-500 bg-red-50/50 shadow-sm ring-1 ring-red-400' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/70'
-                }`}>
-                  <div className="flex items-center gap-3">
-                    <input 
-                      type="radio" 
-                      name="payment"
-                      checked={paymentMethod === 'doku'}
-                      onChange={() => setPaymentMethod('doku')}
-                      className="accent-red-600 cursor-pointer"
-                    />
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs font-extrabold text-gray-900 block">
-                          Pay with DOKU (QRIS, Virtual Account, Cards)
-                        </span>
-                        <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-md uppercase tracking-wider">
-                          Instant IDR
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-gray-500 block mt-0.5">
-                        QRIS (BCA, GoPay, OVO, Dana), BCA/Mandiri/BRI/BNI VA, &amp; Credit Cards
-                      </span>
-                    </div>
-                  </div>
-                  <DokuLogo />
-                </label>
-
-                {/* Option 2: PayPal / Card */}
-                <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
-                  paymentMethod === 'paypal' ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/70'
+                  paymentMethod === 'paypal' ? 'border-blue-500 bg-blue-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
                 }`}>
                   <div className="flex items-center gap-3">
                     <input 
@@ -662,9 +552,9 @@ function CheckoutContent() {
                   </div>
                 </label>
 
-                {/* Option 3: Wise */}
+                {/* Option 2: Wise */}
                 <label className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
-                  paymentMethod === 'wise' ? 'border-green-500 bg-green-50/50 shadow-sm' : 'border-gray-200 bg-gray-50 hover:bg-gray-100/70'
+                  paymentMethod === 'wise' ? 'border-green-500 bg-green-50/50 shadow-sm' : 'border-gray-200 bg-gray-50'
                 }`}>
                   <div className="flex items-center gap-3">
                     <input 
@@ -687,16 +577,6 @@ function CheckoutContent() {
               </div>
 
               {/* Payment info by method */}
-              {paymentMethod === 'doku' && (
-                <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-[11px] text-red-900">
-                  <p className="font-bold mb-1 flex items-center gap-1.5">
-                    <span>🇮🇩</span> <span>DOKU Indonesian Payment Gateway</span>
-                  </p>
-                  <p className="leading-relaxed">
-                    You'll be redirected to DOKU's secure checkout to pay <strong>{idrFormatted}</strong> via QRIS, Virtual Accounts (BCA, Mandiri, BRI, BNI), or Credit/Debit Card. Instant automatic confirmation.
-                  </p>
-                </div>
-              )}
               {paymentMethod === 'paypal' && (
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-[11px] text-blue-800">
                   <p className="font-bold mb-1">🔒 Secure PayPal Payment</p>
@@ -723,41 +603,19 @@ function CheckoutContent() {
             <button
               type="submit"
               disabled={submitting}
-              className={`w-full py-4 text-white font-extrabold text-sm rounded-2xl shadow-xl transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2 ${
-                paymentMethod === 'doku'
-                  ? 'bg-red-700 hover:bg-red-600 shadow-red-950/20'
-                  : 'bg-emerald-800 hover:bg-emerald-700 shadow-emerald-900/20'
-              }`}
+              className="w-full py-4 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-emerald-900/20 transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {submitting ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  {paymentMethod === 'doku'
-                    ? 'Redirecting to DOKU Checkout...'
-                    : paymentMethod === 'paypal'
-                    ? 'Redirecting to PayPal...'
-                    : 'Generating Wise link...'}
+                  {paymentMethod === 'paypal' ? 'Redirecting to PayPal...' : paymentMethod === 'wise' ? 'Generating Wise link...' : 'Processing...'}
                 </>
               ) : (
                 <>
-                  {paymentMethod === 'doku' ? (
-                    <>
-                      <span>🔒 Pay with DOKU — {idrFormatted}</span>
-                      <span className="font-normal text-red-200 text-[11px]">≈ ${totalPrice}</span>
-                    </>
-                  ) : paymentMethod === 'paypal' ? (
-                    <>
-                      <span>🔒 Pay with PayPal — </span>
-                      {format(totalPrice)}
-                      {currency === 'USD' && <span className="font-normal text-emerald-300 text-[11px]">≈ {idrFormatted}</span>}
-                    </>
-                  ) : (
-                    <>
-                      <span>💚 Pay with Wise — </span>
-                      {format(totalPrice)}
-                      {currency === 'USD' && <span className="font-normal text-emerald-300 text-[11px]">≈ {idrFormatted}</span>}
-                    </>
-                  )}
+                  {paymentMethod === 'paypal' ? '🔒 Pay with PayPal — ' : '💚 Pay with Wise — '}
+                  {/* Show price in user's selected currency */}
+                  {format(totalPrice)}
+                  {currency === 'USD' && <span className="font-normal text-emerald-300 text-[11px]">≈ {idrFormatted}</span>}
                 </>
               )}
             </button>
