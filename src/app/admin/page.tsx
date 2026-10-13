@@ -388,17 +388,14 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [storageReady, setStorageReady] = useState<boolean | null>(null); // null = unknown, true = ok, false = not set up
 
   // Upload a single file to Supabase Storage and return the public URL.
   // Falls back to a data URL only if Supabase Storage is unavailable.
-  const uploadFileToSupabase = async (file: File): Promise<string> => {
+  const uploadFileToSupabase = async (file: File): Promise<string | null> => {
     if (!isSupabaseConfigured || !supabase) {
-      // No Supabase – use base64 as a temporary local preview
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => resolve(ev.target?.result as string);
-        reader.readAsDataURL(file);
-      });
+      setStorageReady(false);
+      return null;
     }
     const ext = file.name.split('.').pop() || 'jpg';
     const path = `activities/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -406,14 +403,13 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
       .from('activity-images')
       .upload(path, file, { cacheControl: '31536000', upsert: false, contentType: file.type });
     if (storageError) {
-      // Storage bucket might not exist — fall back to base64 so admin can still work locally
-      console.warn('Supabase Storage upload failed, falling back to data URL:', storageError.message);
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => resolve(ev.target?.result as string);
-        reader.readAsDataURL(file);
-      });
+      // Storage bucket might not exist
+      console.warn('Supabase Storage upload failed:', storageError.message);
+      setStorageReady(false);
+      setError('Storage bucket not set up. Please follow the setup steps below to enable image uploads.');
+      return null;
     }
+    setStorageReady(true);
     const { data: urlData } = supabase.storage.from('activity-images').getPublicUrl(path);
     return urlData.publicUrl;
   };
@@ -437,7 +433,12 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
         const url = await uploadFileToSupabase(file);
         if (url) uploaded.push(url);
       }
-      if (uploaded.length > 0) onChange([...images, ...uploaded]);
+      if (uploaded.length > 0) {
+        onChange([...images, ...uploaded]);
+      } else if (storageReady === false) {
+        // All uploads failed due to missing bucket — show setup instructions
+        setError('❌ Images could not be uploaded. The "activity-images" storage bucket is not set up in Supabase. See the yellow box below.');
+      }
     } finally {
       setUploading(false);
     }
@@ -535,10 +536,10 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
       <div className="flex items-center gap-2">
         <input
           type="url"
-          placeholder="Or paste an image web URL (e.g. https://...)"
+          placeholder={storageReady === false ? '⚠️ Storage not set up — paste a public image URL instead (e.g. https://...)' : 'Or paste an image web URL (e.g. https://...)'}
           value={urlInput}
           onChange={(e) => setUrlInput(e.target.value)}
-          className="flex-1 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs text-gray-800 placeholder:text-gray-400 outline-none focus:border-emerald-600"
+          className={`flex-1 border rounded-xl px-3 py-2 text-xs text-gray-800 placeholder:text-gray-500 outline-none focus:border-emerald-600 ${storageReady === false ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'}`}
         />
         <button
           type="button"
@@ -555,6 +556,28 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <span>{error}</span>
         </p>
+      )}
+
+      {/* Storage setup instructions banner */}
+      {storageReady === false && (
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 space-y-2">
+          <p className="text-xs font-extrabold text-amber-800 flex items-center gap-1.5">
+            ⚠️ Supabase Storage is not set up — images won&apos;t sync to all visitors
+          </p>
+          <p className="text-[11px] text-amber-700 leading-relaxed">
+            <strong>Quick fix (1 min):</strong> Go to your{' '}
+            <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="underline font-bold">Supabase Dashboard</a>
+            {' '}→ <strong>Storage</strong> → <strong>New bucket</strong> → name it exactly{' '}
+            <code className="bg-amber-100 px-1 rounded font-mono">activity-images</code>
+            {' '}→ check <strong>Public bucket</strong> → Save.
+          </p>
+          <p className="text-[11px] text-amber-700">
+            Then run <strong>supabase/fix_rls_and_storage.sql</strong> in your Supabase SQL Editor.
+          </p>
+          <p className="text-[11px] text-amber-700 font-semibold">
+            🟡 In the meantime: paste public image URLs (Unsplash, Google Drive, Cloudinary, etc.) in the field above — those will sync correctly!
+          </p>
+        </div>
       )}
 
       {/* Photo thumbnails grid */}
