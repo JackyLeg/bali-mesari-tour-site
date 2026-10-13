@@ -135,6 +135,8 @@ function CheckoutContent() {
   const [paymentMethod, setPaymentMethod] = useState<'paypal' | 'wise'>('paypal');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  // Stable booking reference & idempotency key for this checkout session
+  const [bookingRef] = useState(() => 'BMT-' + Math.floor(100000 + Math.random() * 900000));
 
   // 🌍 Smart Auto-Detect: Detect visitor's country by IP location on mount
   useEffect(() => {
@@ -214,18 +216,17 @@ function CheckoutContent() {
     const sanitizedHotel = sanitizeInput(pickupHotel, 255);
     const sanitizedRequests = sanitizeInput(specialRequests, 500);
 
-    const bookingRef = 'BMT-' + Math.floor(100000 + Math.random() * 900000);
-
     // ── Handle PayPal Payment ──────────────────────────────────────────────
     if (paymentMethod === 'paypal') {
       try {
-        // Call our server-side PayPal API (never expose secrets to client)
+        // Call our server-side PayPal API with idempotencyKey
         const res = await fetch('/api/payment/paypal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             amount: totalPrice,
             bookingRef,
+            idempotencyKey: `order-${bookingRef}`,
             activityTitle: sanitizeInput(activityTitle, 100),
             currency: 'USD',
           }),
@@ -236,6 +237,31 @@ function CheckoutContent() {
           setFormError(data.error);
           setSubmitting(false);
           return;
+        }
+
+        // Save pending booking in DB with onConflict upsert for idempotency
+        if (isSupabaseConfigured && supabase) {
+          try {
+            await supabase.from('bookings').upsert([{
+              booking_reference: bookingRef,
+              user_name: sanitizedName,
+              user_email: sanitizedEmail,
+              user_phone: sanitizedPhone,
+              user_country: sanitizedCountry,
+              booking_date: bookingDate,
+              participants_count: participants,
+              pickup_address: sanitizedHotel,
+              special_requests: sanitizedRequests,
+              total_amount: totalPrice,
+              currency: 'USD',
+              payment_method: 'paypal',
+              payment_id: data.orderId,
+              payment_status: 'pending',
+              booking_status: 'pending',
+            }], { onConflict: 'booking_reference' });
+          } catch (dbErr) {
+            console.error('Pending booking save error:', dbErr);
+          }
         }
 
         // Save booking reference to localStorage so confirmation page can retrieve it
@@ -254,8 +280,6 @@ function CheckoutContent() {
         } catch {}
 
         // 📚 Redirect to PayPal for approval
-        // The browser navigates to PayPal's website. After the user approves,
-        // PayPal redirects them back to /booking/confirmation?paypal=success&ref=BMT-XXXX
         window.location.href = data.approvalUrl;
         return;
 
@@ -275,11 +299,37 @@ function CheckoutContent() {
           body: JSON.stringify({
             amount: totalPrice,
             bookingRef,
+            idempotencyKey: `wise-${bookingRef}`,
             activityTitle: sanitizeInput(activityTitle, 100),
             guestName: sanitizedName,
           }),
         });
         const data = await res.json();
+
+        // Save pending booking in DB with onConflict upsert for idempotency
+        if (isSupabaseConfigured && supabase) {
+          try {
+            await supabase.from('bookings').upsert([{
+              booking_reference: bookingRef,
+              user_name: sanitizedName,
+              user_email: sanitizedEmail,
+              user_phone: sanitizedPhone,
+              user_country: sanitizedCountry,
+              booking_date: bookingDate,
+              participants_count: participants,
+              pickup_address: sanitizedHotel,
+              special_requests: sanitizedRequests,
+              total_amount: totalPrice,
+              currency: 'USD',
+              payment_method: 'wise',
+              payment_id: data.reference || `BMT-${bookingRef}`,
+              payment_status: 'pending',
+              booking_status: 'pending',
+            }], { onConflict: 'booking_reference' });
+          } catch (dbErr) {
+            console.error('Pending Wise booking save error:', dbErr);
+          }
+        }
 
         // Save pending booking so confirmation page knows what was booked
         try {
@@ -316,15 +366,10 @@ function CheckoutContent() {
 
     // ── Handle Cash/Arrival Payment ───────────────────────────────────────
 
-    // 1️⃣ Save to Supabase (cross-device sync)
-    // 📚 SUPABASE PARAMETERIZED QUERIES:
-    // The .insert([{...}]) call uses Supabase's JavaScript client which
-    // internally uses PostgreSQL prepared statements. User data is passed
-    // as parameters — never concatenated into SQL strings.
-    // This makes SQL injection structurally impossible, not just sanitized.
+    // 1️⃣ Save to Supabase (cross-device sync with onConflict upsert idempotency)
     if (isSupabaseConfigured && supabase) {
       try {
-        await supabase.from('bookings').insert([{
+        await supabase.from('bookings').upsert([{
           booking_reference: bookingRef,
           user_name: sanitizedName,
           user_email: sanitizedEmail,
@@ -336,9 +381,10 @@ function CheckoutContent() {
           special_requests: sanitizedRequests,
           total_amount: totalPrice,
           currency: 'USD',
+          payment_method: 'arrival',
           payment_status: 'confirmed',
           booking_status: 'confirmed',
-        }]);
+        }], { onConflict: 'booking_reference' });
       } catch (err) {
         console.error('Supabase booking save error:', err);
       }

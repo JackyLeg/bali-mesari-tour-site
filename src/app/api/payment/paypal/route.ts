@@ -135,14 +135,15 @@ export async function POST(request: NextRequest) {
     // ── Create PayPal Order ─────────────────────────────────────────────────
     // PayPal Order v2 API: https://developer.paypal.com/api/orders/v2/
     const origin = request.nextUrl.origin;
+    const idempotencyKey = sanitizeInput(String(body.idempotencyKey || ''), 100) || `order-${bookingRef}`;
 
     const orderResponse = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        // PayPal-Request-Id prevents duplicate orders if request is retried
-        'PayPal-Request-Id': `${bookingRef}-${Date.now()}`,
+        // PayPal-Request-Id: deterministic key guarantees idempotent order creation
+        'PayPal-Request-Id': idempotencyKey,
       },
       body: JSON.stringify({
         intent: 'CAPTURE', // 'CAPTURE' means collect money immediately (not authorize-then-capture)

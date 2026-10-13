@@ -122,9 +122,31 @@ CREATE TABLE IF NOT EXISTS public.bookings (
     currency VARCHAR(10) DEFAULT 'USD',
     payment_method VARCHAR(20) DEFAULT 'arrival', -- arrival | paypal | wise
     payment_id VARCHAR(255),                       -- PayPal order ID or Wise reference
+    idempotency_key VARCHAR(100) UNIQUE,           -- Unique client transaction idempotency token
     payment_status VARCHAR(50) DEFAULT 'confirmed', -- confirmed, pending, refunded
     booking_status VARCHAR(50) DEFAULT 'confirmed', -- confirmed, cancelled, completed
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- Unique index to prevent duplicate payment captures across bookings
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bookings_unique_payment_id 
+ON public.bookings (payment_id) 
+WHERE payment_id IS NOT NULL AND payment_id != '';
+
+-- 7b. PAYMENT TRANSACTIONS (Idempotency Ledger)
+CREATE TABLE IF NOT EXISTS public.payment_transactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    idempotency_key VARCHAR(120) UNIQUE NOT NULL,
+    booking_reference VARCHAR(50) NOT NULL,
+    provider VARCHAR(20) NOT NULL,            -- paypal | wise | arrival
+    request_type VARCHAR(30) NOT NULL,        -- create_order | capture | link
+    provider_transaction_id VARCHAR(255),
+    amount NUMERIC(10, 2) NOT NULL,
+    currency VARCHAR(10) DEFAULT 'USD',
+    status VARCHAR(50) NOT NULL,              -- pending | completed | failed
+    response_payload JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 8. REVIEWS

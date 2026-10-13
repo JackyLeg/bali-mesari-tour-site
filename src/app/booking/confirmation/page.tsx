@@ -18,7 +18,9 @@ import {
   Star,
   MessageSquarePlus,
   Sparkles,
-  FileText
+  FileText,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { useCurrency } from '@/lib/currency';
 
@@ -27,21 +29,30 @@ function ConfirmationContent() {
   const router = useRouter();
   const { format } = useCurrency();
 
-  // Retrieve URL params or fallback to stored pending booking
-  const ref = searchParams.get('ref') || 'BMT-849201';
-  const title = searchParams.get('title') || 'Mount Batur Sunrise Trekking & Hot Springs';
-  const packageName = searchParams.get('package') || '';
-  const slug = searchParams.get('slug') || '';
-  const date = searchParams.get('date') || '2026-09-05';
-  const guests = searchParams.get('guests') || '2';
-  const total = searchParams.get('total') || '70';
-  const name = searchParams.get('name') || 'Sarah Jenkins';
-  const email = searchParams.get('email') || 'sarah@example.com';
-  const phone = searchParams.get('phone') || '';
-  const country = searchParams.get('country') || '';
-  const hotel = searchParams.get('hotel') || 'Padma Resort Ubud Lobby';
+  const paypalSuccess = searchParams.get('paypal') === 'success';
+  const paypalToken = searchParams.get('token');
+  const refParam = searchParams.get('ref');
+
+  // State for booking fields (allows hydration from localStorage if returning from PayPal redirect)
+  const [booking, setBooking] = useState({
+    ref: refParam || 'BMT-849201',
+    title: searchParams.get('title') || 'Mount Batur Sunrise Trekking & Hot Springs',
+    packageName: searchParams.get('package') || '',
+    slug: searchParams.get('slug') || '',
+    date: searchParams.get('date') || '2026-09-05',
+    guests: searchParams.get('guests') || '2',
+    total: searchParams.get('total') || '70',
+    name: searchParams.get('name') || 'Sarah Jenkins',
+    email: searchParams.get('email') || 'sarah@example.com',
+    phone: searchParams.get('phone') || '',
+    country: searchParams.get('country') || '',
+    hotel: searchParams.get('hotel') || 'Padma Resort Ubud Lobby',
+  });
 
   const [currentDate, setCurrentDate] = useState('');
+  const [capturing, setCapturing] = useState(Boolean(paypalSuccess && paypalToken));
+  const [captureError, setCaptureError] = useState<string | null>(null);
+  const captureAttempted = React.useRef(false);
 
   useEffect(() => {
     setCurrentDate(new Date().toLocaleDateString('en-GB', {
@@ -49,11 +60,68 @@ function ConfirmationContent() {
       month: 'short',
       year: 'numeric'
     }));
-  }, []);
+
+    // Hydrate booking details from localStorage if present
+    try {
+      const stored = localStorage.getItem('pending_booking_data');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (!refParam || parsed.ref === refParam) {
+          setBooking(prev => ({
+            ...prev,
+            ref: parsed.ref || prev.ref,
+            title: parsed.title || prev.title,
+            date: parsed.date || prev.date,
+            guests: String(parsed.guests || prev.guests),
+            total: String(parsed.total || prev.total),
+            name: parsed.name || prev.name,
+            email: parsed.email || prev.email,
+            hotel: parsed.hotel || prev.hotel,
+          }));
+        }
+      }
+    } catch (_) {}
+
+    // Idempotent capture execution (strictly executes once even in React 18 StrictMode)
+    if (paypalSuccess && paypalToken && !captureAttempted.current) {
+      captureAttempted.current = true;
+      setCapturing(true);
+
+      const targetRef = refParam || booking.ref;
+      fetch('/api/payment/paypal/capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: paypalToken,
+          bookingRef: targetRef,
+          idempotencyKey: `capture-${targetRef}`,
+        }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          setCapturing(false);
+          if (data.error) {
+            setCaptureError(data.error);
+          } else {
+            // Clear pending booking storage on success
+            try {
+              localStorage.removeItem('pending_booking_ref');
+              localStorage.removeItem('pending_booking_data');
+            } catch (_) {}
+          }
+        })
+        .catch(() => {
+          setCapturing(false);
+          setCaptureError('Payment capture verification timed out. Please contact support.');
+        });
+    }
+  }, [paypalSuccess, paypalToken, refParam]);
 
   const handlePrint = () => {
     window.print();
   };
+
+  const { ref, title, packageName, slug, date, guests, total, name, email, phone, country, hotel } = booking;
 
   return (
     <div className="pt-24 pb-20 min-h-screen bg-gray-50 print:pt-0 print:pb-0 print:bg-white print:min-h-0">
@@ -90,19 +158,47 @@ function ConfirmationContent() {
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 print-container print:px-0">
         
-        {/* Success Header Box (Screen only, hidden on print) */}
-        <div className="no-print bg-emerald-800 text-white rounded-3xl p-8 text-center shadow-xl mb-8 relative overflow-hidden">
-          <div className="w-16 h-16 rounded-full bg-amber-400 text-emerald-950 flex items-center justify-center mx-auto mb-4 shadow-md animate-bounce">
-            <CheckCircle2 className="w-10 h-10" />
+        {/* Success / Capturing Header Box */}
+        {capturing ? (
+          <div className="no-print bg-emerald-900 text-white rounded-3xl p-8 text-center shadow-xl mb-8 relative overflow-hidden">
+            <div className="w-16 h-16 rounded-full bg-amber-400 text-emerald-950 flex items-center justify-center mx-auto mb-4 shadow-md">
+              <Loader2 className="w-8 h-8 animate-spin" />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-widest text-amber-300 block mb-1">
+              Verifying Payment
+            </span>
+            <h1 className="text-2xl font-extrabold tracking-tight">Finalizing Your PayPal Transaction...</h1>
+            <p className="text-emerald-100/90 text-sm mt-2 max-w-md mx-auto">
+              Confirming transaction idempotently with PayPal gateway. Please do not close this window.
+            </p>
           </div>
-          <span className="text-xs font-bold uppercase tracking-widest text-amber-300 block mb-1">
-            Payment Confirmed
-          </span>
-          <h1 className="text-3xl font-extrabold tracking-tight">Suksma! Your Booking is Complete</h1>
-          <p className="text-emerald-100/90 text-sm mt-2 max-w-md mx-auto">
-            Your official booking receipt has been generated. A copy was sent to <span className="font-bold text-white">{email}</span>.
-          </p>
-        </div>
+        ) : captureError ? (
+          <div className="no-print bg-amber-900 text-white rounded-3xl p-8 text-center shadow-xl mb-8 relative overflow-hidden">
+            <div className="w-16 h-16 rounded-full bg-amber-400 text-amber-950 flex items-center justify-center mx-auto mb-4 shadow-md">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-widest text-amber-300 block mb-1">
+              Payment Verification Notice
+            </span>
+            <h1 className="text-2xl font-extrabold tracking-tight">Booking Recorded</h1>
+            <p className="text-amber-100 text-sm mt-2 max-w-md mx-auto">
+              {captureError} — Our team will verify your payment manually.
+            </p>
+          </div>
+        ) : (
+          <div className="no-print bg-emerald-800 text-white rounded-3xl p-8 text-center shadow-xl mb-8 relative overflow-hidden">
+            <div className="w-16 h-16 rounded-full bg-amber-400 text-emerald-950 flex items-center justify-center mx-auto mb-4 shadow-md animate-bounce">
+              <CheckCircle2 className="w-10 h-10" />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-widest text-amber-300 block mb-1">
+              Payment Confirmed
+            </span>
+            <h1 className="text-3xl font-extrabold tracking-tight">Suksma! Your Booking is Complete</h1>
+            <p className="text-emerald-100/90 text-sm mt-2 max-w-md mx-auto">
+              Your official booking receipt has been generated. A copy was sent to <span className="font-bold text-white">{email}</span>.
+            </p>
+          </div>
+        )}
 
         {/* Official Printable Receipt Card */}
         <div className="bg-white rounded-3xl border border-gray-200 shadow-xl overflow-hidden mb-8 print-receipt-card">
