@@ -369,6 +369,11 @@ function LoginScreen({ onLogin }: { onLogin: (session?: any) => void }) {
 //   Images are stored as a flat array. The first image (index 0) is always the cover
 //   shown on catalog cards. "Set as Cover" swaps the chosen image to position 0.
 //   Drag & drop works whether the zone is empty or already has photos.
+//
+// 📚 HOW IMAGE UPLOAD WORKS:
+//   Local files → uploaded to Supabase Storage bucket 'activity-images' → public URL saved.
+//   This avoids storing base64 data URLs (which are megabytes large and break the upsert).
+//   URL-pasted images are saved as-is (no upload needed).
 
 interface ImageUploaderProps {
   images: string[];
@@ -382,8 +387,38 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
   const [error, setError] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [urlInput, setUrlInput] = useState('');
+  const [uploading, setUploading] = useState(false);
 
-  const handleFiles = (files: FileList | null) => {
+  // Upload a single file to Supabase Storage and return the public URL.
+  // Falls back to a data URL only if Supabase Storage is unavailable.
+  const uploadFileToSupabase = async (file: File): Promise<string> => {
+    if (!isSupabaseConfigured || !supabase) {
+      // No Supabase – use base64 as a temporary local preview
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.readAsDataURL(file);
+      });
+    }
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `activities/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error: storageError } = await supabase.storage
+      .from('activity-images')
+      .upload(path, file, { cacheControl: '31536000', upsert: false, contentType: file.type });
+    if (storageError) {
+      // Storage bucket might not exist — fall back to base64 so admin can still work locally
+      console.warn('Supabase Storage upload failed, falling back to data URL:', storageError.message);
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target?.result as string);
+        reader.readAsDataURL(file);
+      });
+    }
+    const { data: urlData } = supabase.storage.from('activity-images').getPublicUrl(path);
+    return urlData.publicUrl;
+  };
+
+  const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setError('');
     const remaining = MAX_IMAGES - images.length;
@@ -391,25 +426,21 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
     const toProcess = Array.from(files).slice(0, remaining);
     if (files.length > remaining) setError(`Only ${remaining} more can be added. Others were skipped.`);
 
-    // Read all files and append them together
-    const pending: string[] = [];
-    let done = 0;
-    toProcess.forEach((file, i) => {
-      if (!file.type.startsWith('image/')) { 
-        setError('Only image files accepted (jpg, png, webp, gif).'); 
-        done++; 
-        return; 
-      }
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        pending[i] = ev.target?.result as string;
-        done++;
-        if (done === toProcess.length) {
-          onChange([...images, ...pending.filter(Boolean)]);
+    setUploading(true);
+    try {
+      const uploaded: string[] = [];
+      for (const file of toProcess) {
+        if (!file.type.startsWith('image/')) {
+          setError('Only image files accepted (jpg, png, webp, gif).');
+          continue;
         }
-      };
-      reader.readAsDataURL(file);
-    });
+        const url = await uploadFileToSupabase(file);
+        if (url) uploaded.push(url);
+      }
+      if (uploaded.length > 0) onChange([...images, ...uploaded]);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const addImageUrl = () => {
@@ -482,10 +513,11 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            className="mt-1 px-4 py-2 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer"
+            disabled={uploading}
+            className="mt-1 px-4 py-2 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-wait"
           >
             <ImageIcon className="w-4 h-4" />
-            <span>📁 Browse Files / Open File Manager</span>
+            <span>{uploading ? '⏳ Uploading...' : '📁 Browse Files / Open File Manager'}</span>
           </button>
         </div>
 
@@ -2009,7 +2041,13 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
       is_trending: true,
     };
 
-    const imagesToSave = (activity.images && activity.images.length > 0) ? activity.images : [];
+    // 📚 Filter out local base64 data URLs — they are too large for Supabase and indicate
+    // the Supabase Storage upload failed or Storage is not set up. Only persist http(s) URLs.
+    const imagesToSave = (activity.images && activity.images.length > 0)
+      ? activity.images.filter((url) => url.startsWith('http://') || url.startsWith('https://'))
+      : [];
+
+    const hasLocalImages = (activity.images || []).some((url) => url.startsWith('data:'));
 
     try {
       let activePayload: any = { ...payload };
@@ -2052,14 +2090,35 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
         return { ok: false, error: error.message };
       }
 
+      // 📚 If savedRecord is null with no error, it usually means the RLS policy on
+      // the 'activities' table is blocking INSERT/UPDATE for the anon key.
+      // Fix: run the SQL below in Supabase SQL Editor to allow anon CRUD:
+      //   DROP POLICY IF EXISTS "Admin all activities" ON public.activities;
+      //   CREATE POLICY "Admin all activities" ON public.activities FOR ALL USING (true) WITH CHECK (true);
+      //   DROP POLICY IF EXISTS "Admin all activity_images" ON public.activity_images;
+      //   CREATE POLICY "Admin all activity_images" ON public.activity_images FOR ALL USING (true) WITH CHECK (true);
+      if (!savedRecord) {
+        console.error('Supabase upsert returned null — likely blocked by RLS. Run the SQL fix in Supabase SQL Editor.');
+        return { ok: false, error: 'RLS policy blocked the insert. Please run the SQL fix in Supabase SQL Editor (see console for details).' };
+      }
+
       if (savedRecord?.id && imagesToSave.length > 0) {
         await supabase.from('activity_images').delete().eq('activity_id', savedRecord.id);
         const imageRows = imagesToSave.map((url, idx) => ({
-          activity_id: savedRecord.id,
+          activity_id: savedRecord!.id,
           image_url: url,
           display_order: idx,
         }));
-        await supabase.from('activity_images').insert(imageRows);
+        const { error: imgError } = await supabase.from('activity_images').insert(imageRows);
+        if (imgError) {
+          console.warn('activity_images insert error:', imgError.message);
+        }
+      }
+
+      if (hasLocalImages && imagesToSave.length === 0) {
+        // All images were base64 data URLs (Storage bucket not configured) — warn but don't fail
+        console.warn('Images were uploaded as local files but Supabase Storage is not configured. Set up the "activity-images" bucket to persist photos.');
+        return { ok: true, error: 'Tour saved, but images were not persisted (Supabase Storage bucket "activity-images" not set up).' };
       }
 
       return { ok: true };
@@ -2081,8 +2140,11 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
     saveCustomLocally(updated);
     setAddModalOpen(false);
 
-    if (res.ok) {
+    if (res.ok && !res.error) {
       showToast('Tour published & synced to Supabase successfully!');
+    } else if (res.ok && res.error) {
+      // Partial success: tour saved but images or storage had a warning
+      showToast('Tour saved! ⚠️ ' + res.error, 'error');
     } else {
       showToast('Saved locally, but Supabase rejected sync: ' + res.error, 'error');
     }
@@ -2096,8 +2158,10 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
     saveCustomLocally(updated);
     setEditActivity(null);
 
-    if (res.ok) {
+    if (res.ok && !res.error) {
       showToast('Tour updated & synced across all devices!');
+    } else if (res.ok && res.error) {
+      showToast('Tour updated! ⚠️ ' + res.error, 'error');
     } else {
       showToast('Updated locally, but Supabase error: ' + res.error, 'error');
     }
