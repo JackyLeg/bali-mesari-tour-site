@@ -1,12 +1,12 @@
 import React from 'react';
 import Link from 'next/link';
-import { 
-  ShieldCheck, 
-  Clock, 
-  MapPin, 
-  Sparkles, 
-  PhoneCall, 
-  Mail, 
+import {
+  ShieldCheck,
+  Clock,
+  MapPin,
+  Sparkles,
+  PhoneCall,
+  Mail,
   Heart,
   Award,
   CheckCircle2
@@ -16,7 +16,7 @@ export default function Footer() {
   return (
     <footer className="bg-emerald-950 text-white pt-16 pb-8 border-t border-emerald-900 print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        
+
         {/* Trust Badges Banner */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 pb-12 border-b border-emerald-800/60 mb-12">
           <div className="flex items-center gap-3">
@@ -62,7 +62,7 @@ export default function Footer() {
 
         {/* Navigation & Links */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12">
-          
+
           {/* Brand Info */}
           <div className="lg:col-span-2">
             <Link href="/" className="flex items-center gap-2 mb-4">
@@ -126,7 +126,7 @@ export default function Footer() {
               Help & Support
             </h3>
             <ul className="space-y-2.5 text-sm text-emerald-200/80">
-              <li><a href="https://wa.me/6285128016716" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors flex items-center gap-1.5"><PhoneCall className="w-3.5 h-3.5 text-amber-400" /> WhatsApp Direct (+62 851-2801-6716)</a></li>
+              <li><a href="https://wa.me/6285128016716" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors flex items-center gap-1.5"><PhoneCall className="w-3.5 h-3.5 text-amber-400" /> WhatsApp Direct (+62 813-3873-3965)</a></li>
               <li><Link href="/blog" className="hover:text-white transition-colors">Bali Travel FAQ</Link></li>
               <li><Link href="/checkout" className="hover:text-white transition-colors">Booking Voucher Lookup</Link></li>
               <li className="pt-2 text-xs text-emerald-300/60">Made with ❤️ in Bali, Indonesia</li>
