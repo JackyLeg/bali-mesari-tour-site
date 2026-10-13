@@ -88,6 +88,12 @@ function ConfirmationContent() {
       setCapturing(true);
 
       const targetRef = refParam || booking.ref;
+      let pendingData: Record<string, any> = {};
+      try {
+        const stored = localStorage.getItem('pending_booking_data');
+        if (stored) pendingData = JSON.parse(stored);
+      } catch (_) {}
+
       fetch('/api/payment/paypal/capture', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -95,6 +101,17 @@ function ConfirmationContent() {
           orderId: paypalToken,
           bookingRef: targetRef,
           idempotencyKey: `capture-${targetRef}`,
+          bookingDetails: {
+            user_name: pendingData.name || booking.name,
+            user_email: pendingData.email || booking.email,
+            user_phone: pendingData.phone || booking.phone,
+            user_country: pendingData.country || booking.country,
+            booking_date: pendingData.date || booking.date,
+            participants_count: Number(pendingData.guests || booking.guests) || 1,
+            pickup_address: pendingData.hotel || booking.hotel,
+            total_amount: Number(pendingData.total || booking.total) || 0,
+            currency: 'USD',
+          },
         }),
       })
         .then(res => res.json())

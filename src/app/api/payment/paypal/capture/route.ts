@@ -134,20 +134,36 @@ export async function POST(request: NextRequest) {
     const captureUnit = capture.purchase_units?.[0]?.payments?.captures?.[0];
     const captureId = captureUnit?.id || orderId;
 
-    // ── Update Booking Record in DB (Idempotent upsert/update) ─────────────
+    // ── Update or Insert Booking Record in DB (Idempotent upsert) ───────────
     if (isSupabaseConfigured && supabase && bookingRef) {
       try {
-        await supabase
+        const details = (body.bookingDetails || {}) as Record<string, any>;
+        const amountValue = Number(captureUnit?.amount?.value) || Number(details.total_amount) || 0;
+
+        const { error: dbErr } = await supabase
           .from('bookings')
-          .update({
+          .upsert([{
+            booking_reference: bookingRef,
+            user_name: details.user_name || 'Guest',
+            user_email: details.user_email || 'guest@example.com',
+            user_phone: details.user_phone || '',
+            user_country: details.user_country || '',
+            booking_date: details.booking_date || new Date().toISOString().split('T')[0],
+            participants_count: Number(details.participants_count) || 1,
+            pickup_address: details.pickup_address || '',
+            total_amount: amountValue,
+            currency: captureUnit?.amount?.currency_code || 'USD',
             payment_status: 'confirmed',
             booking_status: 'confirmed',
             payment_id: captureId,
             payment_method: 'paypal',
-          })
-          .eq('booking_reference', bookingRef);
+          }], { onConflict: 'booking_reference' });
+
+        if (dbErr) {
+          console.error('[PayPal] DB booking upsert error:', dbErr);
+        }
       } catch (dbErr) {
-        console.error('[PayPal] Failed to update booking payment in DB:', dbErr);
+        console.error('[PayPal] Failed to upsert booking payment in DB:', dbErr);
       }
     }
 

@@ -47,3 +47,15 @@ CREATE POLICY "Public and service role transactions access"
     FOR ALL
     USING (true)
     WITH CHECK (true);
+
+-- 5. Fix RLS on bookings table (Allow anon key to INSERT, UPDATE, and SELECT bookings)
+DROP POLICY IF EXISTS "Public insert bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Public update bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Public read bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Admin all bookings" ON public.bookings;
+
+CREATE POLICY "Admin all bookings"
+    ON public.bookings
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);

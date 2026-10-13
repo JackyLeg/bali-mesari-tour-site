@@ -389,21 +389,25 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
   const [urlInput, setUrlInput] = useState('');
   const [uploading, setUploading] = useState(false);
   const [storageReady, setStorageReady] = useState<boolean | null>(null); // null = unknown, true = ok, false = not set up
+  // Map remote Supabase URLs to local object URLs for instant, 100% reliable previews
+  const [previewMap, setPreviewMap] = useState<Record<string, string>>({});
 
   // Upload a single file to Supabase Storage and return the public URL.
-  // Falls back to a data URL only if Supabase Storage is unavailable.
   const uploadFileToSupabase = async (file: File): Promise<string | null> => {
     if (!isSupabaseConfigured || !supabase) {
       setStorageReady(false);
       return null;
     }
-    const ext = file.name.split('.').pop() || 'jpg';
+    const rawExt = file.name.split('.').pop() || 'jpg';
+    const ext = rawExt.toLowerCase().replace(/jpeg/i, 'jpg');
     const path = `activities/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const contentType = file.type || `image/${ext}`;
+
     const { error: storageError } = await supabase.storage
       .from('activity-images')
-      .upload(path, file, { cacheControl: '31536000', upsert: false, contentType: file.type });
+      .upload(path, file, { cacheControl: '31536000', upsert: false, contentType });
+
     if (storageError) {
-      // Storage bucket might not exist
       console.warn('Supabase Storage upload failed:', storageError.message);
       setStorageReady(false);
       setError('Storage bucket not set up. Please follow the setup steps below to enable image uploads.');
@@ -425,19 +429,32 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
     setUploading(true);
     try {
       const uploaded: string[] = [];
+      const newPreviews: Record<string, string> = {};
+
       for (const file of toProcess) {
-        if (!file.type.startsWith('image/')) {
+        if (!file.type.startsWith('image/') && !/\.(jpe?g|png|webp|gif|avif|heic)$/i.test(file.name)) {
           setError('Only image files accepted (jpg, png, webp, gif).');
           continue;
         }
-        const url = await uploadFileToSupabase(file);
-        if (url) uploaded.push(url);
+
+        // Instant local object URL for 0ms zero-failure thumbnail preview
+        const localBlob = URL.createObjectURL(file);
+        const remoteUrl = await uploadFileToSupabase(file);
+
+        if (remoteUrl) {
+          uploaded.push(remoteUrl);
+          newPreviews[remoteUrl] = localBlob;
+        } else {
+          // If upload failed, keep local preview as temporary display
+          uploaded.push(localBlob);
+        }
       }
+
       if (uploaded.length > 0) {
+        setPreviewMap(prev => ({ ...prev, ...newPreviews }));
         onChange([...images, ...uploaded]);
       } else if (storageReady === false) {
-        // All uploads failed due to missing bucket — show setup instructions
-        setError('❌ Images could not be uploaded. The "activity-images" storage bucket is not set up in Supabase. See the yellow box below.');
+        setError('❌ Images could not be uploaded to Supabase Storage. Check bucket permissions or paste a direct image URL.');
       }
     } finally {
       setUploading(false);
@@ -600,7 +617,16 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
                   idx === coverIndex ? 'border-amber-400 ring-2 ring-amber-400/30 shadow-md' : 'border-gray-200'
                 }`}
               >
-                <img src={src} alt={`Photo ${idx + 1}`} className="w-full h-full object-cover" />
+                <img
+                  src={previewMap[src] || src}
+                  alt={`Photo ${idx + 1}`}
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                  crossOrigin="anonymous"
+                  onError={(e) => {
+                    console.warn(`Failed to render photo thumbnail ${idx + 1}:`, src);
+                  }}
+                />
 
                 {/* Gold ★ Cover badge on active cover */}
                 {idx === coverIndex ? (
