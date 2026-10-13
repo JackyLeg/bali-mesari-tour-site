@@ -581,7 +581,8 @@ export async function getActivities(params?: {
         const mapped: Activity[] = dbActivities.map((row: any) => {
           const sortedImages = (row.activity_images || [])
             .sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0))
-            .map((img: any) => img.image_url);
+            .map((img: any) => img.image_url)
+            .filter((url: string) => url && !url.startsWith('data:'));
 
           const coverImage = sortedImages[0] || 'https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80';
 
