@@ -637,7 +637,19 @@ export async function getActivities(params?: {
         if (Array.isArray(custom) && custom.length > 0) {
           // Merge custom activities avoiding duplicates
           const customSlugs = new Set(custom.map((c) => c.slug));
-          list = [...custom, ...list.filter((a) => !customSlugs.has(a.slug))];
+          const customWithPersistentImages = custom.map((activity) => {
+            const persistentImages = (activity.images || []).filter(
+              (url) => url.startsWith('http://') || url.startsWith('https://')
+            );
+            const syncedActivity = list.find((item) => item.slug === activity.slug);
+            return {
+              ...activity,
+              images: persistentImages.length > 0
+                ? persistentImages
+                : syncedActivity?.images || ['https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80'],
+            };
+          });
+          list = [...customWithPersistentImages, ...list.filter((a) => !customSlugs.has(a.slug))];
         }
       }
     } catch (e) {

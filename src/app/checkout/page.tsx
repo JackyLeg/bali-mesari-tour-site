@@ -272,9 +272,13 @@ function CheckoutContent() {
             name: sanitizedName,
             email: sanitizedEmail,
             title: activityTitle,
+            slug: activitySlug,
+            packageName,
             date: bookingDate,
             guests: participants,
             total: totalPrice,
+            phone: sanitizedPhone,
+            country: sanitizedCountry,
             hotel: sanitizedHotel,
           }));
         } catch {}
@@ -339,9 +343,13 @@ function CheckoutContent() {
             name: sanitizedName,
             email: sanitizedEmail,
             title: activityTitle,
+            slug: activitySlug,
+            packageName,
             date: bookingDate,
             guests: participants,
             total: totalPrice,
+            phone: sanitizedPhone,
+            country: sanitizedCountry,
             hotel: sanitizedHotel,
           }));
         } catch {}

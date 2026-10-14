@@ -71,11 +71,15 @@ function ConfirmationContent() {
             ...prev,
             ref: parsed.ref || prev.ref,
             title: parsed.title || prev.title,
+            packageName: parsed.packageName || prev.packageName,
+            slug: parsed.slug || prev.slug,
             date: parsed.date || prev.date,
             guests: String(parsed.guests || prev.guests),
             total: String(parsed.total || prev.total),
             name: parsed.name || prev.name,
             email: parsed.email || prev.email,
+            phone: parsed.phone || prev.phone,
+            country: parsed.country || prev.country,
             hotel: parsed.hotel || prev.hotel,
           }));
         }
@@ -401,10 +405,11 @@ function ConfirmationContent() {
                 <button 
                   type="button"
                   onClick={() => {
-                    const targetSlug = slug || 'mount-batur-sunrise-trekking';
-                    router.push(`/activities/${targetSlug}?review=true&name=${encodeURIComponent(name)}&ref=${encodeURIComponent(ref)}#reviews`);
+                    if (!slug) return;
+                    router.push(`/activities/${encodeURIComponent(slug)}?review=true&name=${encodeURIComponent(name)}&ref=${encodeURIComponent(ref)}#reviews`);
                   }}
-                  className="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shrink-0 shadow-sm flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
+                  disabled={!slug}
+                  className="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shrink-0 shadow-sm flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <MessageSquarePlus className="w-3.5 h-3.5 text-amber-300" />
                   <span>Write a Review</span>

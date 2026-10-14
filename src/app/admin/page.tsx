@@ -439,22 +439,28 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
 
         // Instant local object URL for 0ms zero-failure thumbnail preview
         const localBlob = URL.createObjectURL(file);
-        const remoteUrl = await uploadFileToSupabase(file);
+        let remoteUrl: string | null;
+        try {
+          remoteUrl = await uploadFileToSupabase(file);
+        } catch (err) {
+          console.error('Supabase Storage upload failed:', err);
+          URL.revokeObjectURL(localBlob);
+          setError('Image upload failed. Check your connection and storage bucket permissions, then try again.');
+          continue;
+        }
 
         if (remoteUrl) {
           uploaded.push(remoteUrl);
           newPreviews[remoteUrl] = localBlob;
         } else {
-          // If upload failed, keep local preview as temporary display
-          uploaded.push(localBlob);
+          URL.revokeObjectURL(localBlob);
+          setError('Image upload failed. Set up the "activity-images" storage bucket or add a public image URL.');
         }
       }
 
       if (uploaded.length > 0) {
         setPreviewMap(prev => ({ ...prev, ...newPreviews }));
         onChange([...images, ...uploaded]);
-      } else if (storageReady === false) {
-        setError('❌ Images could not be uploaded to Supabase Storage. Check bucket permissions or paste a direct image URL.');
       }
     } finally {
       setUploading(false);
@@ -477,6 +483,15 @@ function ImageUploader({ images, onChange, coverIndex, onSetCover }: ImageUpload
   };
 
   const removeImage = (idx: number) => {
+    const previewUrl = previewMap[images[idx]];
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewMap(prev => {
+        const next = { ...prev };
+        delete next[images[idx]];
+        return next;
+      });
+    }
     onChange(images.filter((_, i) => i !== idx));
     // If removed image was cover, shift cover to 0
     if (idx === coverIndex && images.length > 1) onSetCover(0);
@@ -2096,7 +2111,9 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
       ? activity.images.filter((url) => url.startsWith('http://') || url.startsWith('https://'))
       : [];
 
-    const hasLocalImages = (activity.images || []).some((url) => url.startsWith('data:'));
+    const hasUnpersistedImages = (activity.images || []).some(
+      (url) => !url.startsWith('http://') && !url.startsWith('https://')
+    );
 
     try {
       let activePayload: any = { ...payload };
@@ -2152,7 +2169,15 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
       }
 
       if (savedRecord?.id && imagesToSave.length > 0) {
-        await supabase.from('activity_images').delete().eq('activity_id', savedRecord.id);
+        const { error: deleteError } = await supabase
+          .from('activity_images')
+          .delete()
+          .eq('activity_id', savedRecord.id);
+        if (deleteError) {
+          console.error('Could not replace activity images:', deleteError.message);
+          return { ok: false, error: `Could not replace activity images: ${deleteError.message}` };
+        }
+
         const imageRows = imagesToSave.map((url, idx) => ({
           activity_id: savedRecord!.id,
           image_url: url,
@@ -2160,14 +2185,14 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
         }));
         const { error: imgError } = await supabase.from('activity_images').insert(imageRows);
         if (imgError) {
-          console.warn('activity_images insert error:', imgError.message);
+          console.error('activity_images insert error:', imgError.message);
+          return { ok: false, error: `Could not save activity images: ${imgError.message}` };
         }
       }
 
-      if (hasLocalImages && imagesToSave.length === 0) {
-        // All images were base64 data URLs (Storage bucket not configured) — warn but don't fail
-        console.warn('Images were uploaded as local files but Supabase Storage is not configured. Set up the "activity-images" bucket to persist photos.');
-        return { ok: true, error: 'Tour saved, but images were not persisted (Supabase Storage bucket "activity-images" not set up).' };
+      if (hasUnpersistedImages) {
+        console.warn('Some activity images are local previews and were not persisted. Use Supabase Storage or public image URLs.');
+        return { ok: true, error: 'Some images were not persisted. Set up the "activity-images" storage bucket or use public image URLs.' };
       }
 
       return { ok: true };
