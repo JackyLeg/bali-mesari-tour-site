@@ -95,8 +95,8 @@ function buildCSP(): string {
     // Fonts: self + Google Fonts CDN
     "font-src 'self' https://fonts.gstatic.com",
 
-    // Images: self + Unsplash CDN + data URIs (for base64 images)
-    "img-src 'self' data: blob: https://images.unsplash.com https://www.paypalobjects.com https://upload.wikimedia.org",
+    // Images: self + Supabase Storage + Unsplash CDN + data URIs (for base64 images)
+    "img-src 'self' data: blob: https://*.supabase.co https://images.unsplash.com https://www.paypalobjects.com https://upload.wikimedia.org",
 
     // API connections: self + Supabase + PayPal + Wise + Exchange Rate API
     "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.paypal.com https://api.sandbox.paypal.com https://api.wise.com https://v6.exchangerate-api.com",

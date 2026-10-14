@@ -561,6 +561,7 @@ export async function getActivities(params?: {
   sort?: string;
 }): Promise<Activity[]> {
   let list = [...INITIAL_ACTIVITIES];
+  const databaseActivitySlugs = new Set<string>();
 
   // Fetch real activities from Supabase (synced across all devices)
   if (isSupabaseConfigured && supabase) {
@@ -622,6 +623,7 @@ export async function getActivities(params?: {
         });
 
         const dbSlugs = new Set(mapped.map((m) => m.slug));
+        dbSlugs.forEach((slug) => databaseActivitySlugs.add(slug));
         list = [...mapped, ...list.filter((a) => !dbSlugs.has(a.slug))];
       }
     } catch (err) {
@@ -642,10 +644,15 @@ export async function getActivities(params?: {
               (url) => url.startsWith('http://') || url.startsWith('https://')
             );
             const syncedActivity = list.find((item) => item.slug === activity.slug);
+            const syncedImages = databaseActivitySlugs.has(activity.slug)
+              ? syncedActivity?.images
+              : undefined;
             return {
               ...activity,
-              images: persistentImages.length > 0
-                ? persistentImages
+              images: syncedImages?.length
+                ? syncedImages
+                : persistentImages.length > 0
+                  ? persistentImages
                 : syncedActivity?.images || ['https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=1200&q=80'],
             };
           });
