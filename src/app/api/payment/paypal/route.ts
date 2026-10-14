@@ -33,7 +33,9 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { sanitizeInput } from '@/lib/security';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 // ─── PayPal Environment Configuration ────────────────────────────────────────
 
@@ -47,6 +49,13 @@ const PAYPAL_BASE_URL =
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || '';
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const adminSupabase = supabaseUrl && serviceRoleKey
+  ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+  : null;
 
 // ─── PayPal Access Token ──────────────────────────────────────────────────────
 
@@ -94,8 +103,10 @@ async function getPayPalAccessToken(): Promise<string> {
  * Request body:
  * {
  *   amount: number,        // Total price in USD (e.g. 70)
- *   bookingRef: string,    // e.g. "BMT-849201"
- *   activityTitle: string, // e.g. "Mount Batur Sunrise Trekking"
+ *   bookingRef: string,    // BMT- + 32 hex characters
+ *   activityId: string,    // Published activity UUID
+ *   participants: number,
+ *   packageName?: string,
  *   currency: "USD"        // Always USD for PayPal
  * }
  *
@@ -114,19 +125,70 @@ export async function POST(request: NextRequest) {
         { status: 503 }
       );
     }
+    if (isSupabaseConfigured && !adminSupabase) {
+      return NextResponse.json(
+        { error: 'Payment verification is not configured. Contact site administrator.' },
+        { status: 503 }
+      );
+    }
 
     // Parse and validate request body
     const body = await request.json();
-    const amount = Number(body.amount);
+    const requestedAmount = Number(body.amount);
     const bookingRef = sanitizeInput(String(body.bookingRef || ''), 50);
-    const activityTitle = sanitizeInput(String(body.activityTitle || ''), 100);
+    const activityId = sanitizeInput(String(body.activityId || ''), 36);
+    const packageName = sanitizeInput(String(body.packageName || ''), 150);
+    const participants = Number(body.participants);
 
-    // Server-side validation — never trust client-provided amounts
-    if (!amount || amount <= 0 || amount > 10000) {
+    if (!/^BMT-[0-9A-F]{32}$/.test(bookingRef) || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(activityId)) {
+      return NextResponse.json({ error: 'Invalid booking details.' }, { status: 400 });
+    }
+    if (!Number.isInteger(participants) || participants < 1 || participants > 20) {
+      return NextResponse.json({ error: 'Invalid participant count.' }, { status: 400 });
+    }
+    if (!requestedAmount || requestedAmount <= 0 || requestedAmount > 10000) {
       return NextResponse.json(
         { error: 'Invalid booking amount.' },
         { status: 400 }
       );
+    }
+
+    let amount = requestedAmount;
+    let activityTitle = 'Tour activity';
+    if (adminSupabase) {
+      const { data: activity, error: activityError } = await adminSupabase
+        .from('activities')
+        .select('title, price_discounted, price_packages')
+        .eq('id', activityId)
+        .eq('status', 'published')
+        .maybeSingle();
+      if (activityError) {
+        console.error('[PayPal] Activity price lookup failed:', activityError.message);
+        return NextResponse.json({ error: 'Could not verify activity price.' }, { status: 500 });
+      }
+      if (!activity) {
+        return NextResponse.json({ error: 'Activity was not found.' }, { status: 404 });
+      }
+
+      activityTitle = activity.title;
+      const packages = Array.isArray(activity.price_packages)
+        ? activity.price_packages as Array<{ name?: unknown; price?: unknown; unit?: unknown }>
+        : [];
+      const selectedPackage = packages.length
+        ? packages.find((pricePackage) => pricePackage.name === packageName)
+        : null;
+      if (packages.length && !selectedPackage) {
+        return NextResponse.json({ error: 'Selected tour package was not found.' }, { status: 400 });
+      }
+
+      const unitPrice = Number(selectedPackage?.price ?? activity.price_discounted);
+      const unit = String(selectedPackage?.unit || '');
+      const flatRate = /car|group|boat/i.test(unit);
+      const expectedAmount = flatRate ? unitPrice : unitPrice * participants;
+      if (!Number.isFinite(expectedAmount) || requestedAmount !== expectedAmount) {
+        return NextResponse.json({ error: 'Booking price does not match the current catalog price.' }, { status: 400 });
+      }
+      amount = expectedAmount;
     }
 
     // Get PayPal access token
@@ -136,6 +198,11 @@ export async function POST(request: NextRequest) {
     // PayPal Order v2 API: https://developer.paypal.com/api/orders/v2/
     const origin = request.nextUrl.origin;
     const idempotencyKey = sanitizeInput(String(body.idempotencyKey || ''), 100) || `order-${bookingRef}`;
+    const returnParams = new URLSearchParams({
+      paypal: 'success',
+      ref: bookingRef,
+      activityId,
+    });
 
     const orderResponse = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
       method: 'POST',
@@ -151,6 +218,7 @@ export async function POST(request: NextRequest) {
         purchase_units: [{
           // Reference ID links this order to your booking
           reference_id: bookingRef,
+          ...(activityId ? { custom_id: activityId } : {}),
 
           description: `Bali Mesari Tour: ${activityTitle}`,
 
@@ -172,7 +240,7 @@ export async function POST(request: NextRequest) {
           user_action: 'PAY_NOW',     // Button shows "Pay Now" instead of "Continue"
 
           // ✅ Success: redirect here after PayPal approval
-          return_url: `${origin}/booking/confirmation?paypal=success&ref=${bookingRef}`,
+          return_url: `${origin}/booking/confirmation?${returnParams.toString()}`,
 
           // ❌ Cancel: redirect here if user clicks "Cancel" on PayPal
           cancel_url: `${origin}/checkout?paypal=cancelled`,

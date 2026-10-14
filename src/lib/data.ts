@@ -746,6 +746,7 @@ export async function getReviewsForActivity(activityId: string): Promise<Review[
         const dbReviews: Review[] = data.map((r: any) => ({
           id: r.id,
           activityId: r.activity_id || activityId,
+          isVerified: Boolean(r.is_verified),
           userName: r.user_name,
           userCountry: r.user_country || 'Traveler',
           rating: Number(r.rating) || 5,

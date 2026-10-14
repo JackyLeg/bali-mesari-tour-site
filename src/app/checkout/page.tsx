@@ -114,6 +114,7 @@ function CheckoutContent() {
   const { format, currency, rate } = useCurrency();
 
   const activityTitle = searchParams.get('activityTitle') || 'Mount Batur Sunrise Trekking';
+  const activityId = searchParams.get('activityId') || '';
   const activitySlug = searchParams.get('slug') || '';
   const bookingDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
   const participants = Number(searchParams.get('participants') || 2);
@@ -135,8 +136,7 @@ function CheckoutContent() {
   const [paymentMethod, setPaymentMethod] = useState<'paypal' | 'wise'>('paypal');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
-  // Stable booking reference & idempotency key for this checkout session
-  const [bookingRef] = useState(() => 'BMT-' + Math.floor(100000 + Math.random() * 900000));
+  const bookingRefRef = React.useRef<string | null>(null);
 
   // 🌍 Smart Auto-Detect: Detect visitor's country by IP location on mount
   useEffect(() => {
@@ -200,6 +200,12 @@ function CheckoutContent() {
       return;
     }
 
+    const bookingRef = bookingRefRef.current ?? (
+      bookingRefRef.current = `BMT-${crypto.randomUUID().replaceAll('-', '').toUpperCase()}`
+    );
+    const databaseActivityId = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(activityId)
+      ? activityId
+      : null;
     setSubmitting(true);
 
     const fullPhone = `${countryCode} ${phoneRest.trim()}`;
@@ -226,6 +232,9 @@ function CheckoutContent() {
           body: JSON.stringify({
             amount: totalPrice,
             bookingRef,
+            activityId: databaseActivityId || '',
+            participants,
+            packageName,
             idempotencyKey: `order-${bookingRef}`,
             activityTitle: sanitizeInput(activityTitle, 100),
             currency: 'USD',
@@ -244,6 +253,7 @@ function CheckoutContent() {
           try {
             await supabase.from('bookings').upsert([{
               booking_reference: bookingRef,
+              activity_id: databaseActivityId,
               user_name: sanitizedName,
               user_email: sanitizedEmail,
               user_phone: sanitizedPhone,
@@ -269,6 +279,7 @@ function CheckoutContent() {
           localStorage.setItem('pending_booking_ref', bookingRef);
           localStorage.setItem('pending_booking_data', JSON.stringify({
             ref: bookingRef,
+            activityId: databaseActivityId,
             name: sanitizedName,
             email: sanitizedEmail,
             title: activityTitle,
@@ -315,6 +326,7 @@ function CheckoutContent() {
           try {
             await supabase.from('bookings').upsert([{
               booking_reference: bookingRef,
+              activity_id: databaseActivityId,
               user_name: sanitizedName,
               user_email: sanitizedEmail,
               user_phone: sanitizedPhone,
@@ -340,6 +352,7 @@ function CheckoutContent() {
           localStorage.setItem('pending_booking_ref', bookingRef);
           localStorage.setItem('pending_booking_data', JSON.stringify({
             ref: bookingRef,
+            activityId: databaseActivityId,
             name: sanitizedName,
             email: sanitizedEmail,
             title: activityTitle,
@@ -379,6 +392,7 @@ function CheckoutContent() {
       try {
         await supabase.from('bookings').upsert([{
           booking_reference: bookingRef,
+          activity_id: databaseActivityId,
           user_name: sanitizedName,
           user_email: sanitizedEmail,
           user_phone: sanitizedPhone,
@@ -417,6 +431,7 @@ function CheckoutContent() {
       ref: bookingRef,
       title: activityTitle,
       slug: activitySlug,
+      activityId: databaseActivityId || '',
       date: bookingDate,
       guests: participants.toString(),
       total: totalPrice.toString(),

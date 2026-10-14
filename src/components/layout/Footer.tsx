@@ -11,6 +11,7 @@ import {
   Award,
   CheckCircle2
 } from 'lucide-react';
+import { getWhatsAppUrl, WHATSAPP_CONTACT } from '@/lib/contact';
 
 export default function Footer() {
   return (
@@ -126,7 +127,7 @@ export default function Footer() {
               Help & Support
             </h3>
             <ul className="space-y-2.5 text-sm text-emerald-200/80">
-              <li><a href="https://wa.me/6285128016716" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors flex items-center gap-1.5"><PhoneCall className="w-3.5 h-3.5 text-amber-400" /> WhatsApp Direct (+62 813-3873-3965)</a></li>
+              <li><a href={getWhatsAppUrl()} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors flex items-center gap-1.5"><PhoneCall className="w-3.5 h-3.5 text-amber-400" /> WhatsApp Direct ({WHATSAPP_CONTACT})</a></li>
               <li><Link href="/blog" className="hover:text-white transition-colors">Bali Travel FAQ</Link></li>
               <li><Link href="/checkout" className="hover:text-white transition-colors">Booking Voucher Lookup</Link></li>
               <li className="pt-2 text-xs text-emerald-300/60">Made with ❤️ in Bali, Indonesia</li>

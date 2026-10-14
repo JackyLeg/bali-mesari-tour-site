@@ -18,6 +18,16 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
+## Supabase reviews
+
+Run [`supabase/add_verified_reviews.sql`](./supabase/add_verified_reviews.sql) in Supabase SQL Editor before deploying the review changes. Set `SUPABASE_SERVICE_ROLE_KEY` as a server-only environment variable in local development and your hosting provider. Never use a `NEXT_PUBLIC_` prefix for this key.
+
+Verified reviews require a completed PayPal capture recorded in the private `verified_bookings` table. The PayPal order endpoint checks the submitted amount against the published activity price and selected package. Wise payments are not automatically verified.
+
+## WhatsApp contact
+
+Change `WHATSAPP_CONTACT` in [`src/lib/contact.ts`](./src/lib/contact.ts) to update the WhatsApp number across the site.
+
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More

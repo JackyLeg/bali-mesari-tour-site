@@ -23,6 +23,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { useCurrency } from '@/lib/currency';
+import { getWhatsAppUrl, WHATSAPP_CONTACT } from '@/lib/contact';
 
 function ConfirmationContent() {
   const searchParams = useSearchParams();
@@ -36,6 +37,7 @@ function ConfirmationContent() {
   // State for booking fields (allows hydration from localStorage if returning from PayPal redirect)
   const [booking, setBooking] = useState({
     ref: refParam || 'BMT-849201',
+    activityId: searchParams.get('activityId') || '',
     title: searchParams.get('title') || 'Mount Batur Sunrise Trekking & Hot Springs',
     packageName: searchParams.get('package') || '',
     slug: searchParams.get('slug') || '',
@@ -70,6 +72,7 @@ function ConfirmationContent() {
           setBooking(prev => ({
             ...prev,
             ref: parsed.ref || prev.ref,
+            activityId: parsed.activityId || prev.activityId,
             title: parsed.title || prev.title,
             packageName: parsed.packageName || prev.packageName,
             slug: parsed.slug || prev.slug,
@@ -110,6 +113,7 @@ function ConfirmationContent() {
             user_email: pendingData.email || booking.email,
             user_phone: pendingData.phone || booking.phone,
             user_country: pendingData.country || booking.country,
+            activity_id: pendingData.activityId || booking.activityId || null,
             booking_date: pendingData.date || booking.date,
             participants_count: Number(pendingData.guests || booking.guests) || 1,
             pickup_address: pendingData.hotel || booking.hotel,
@@ -363,7 +367,7 @@ function ConfirmationContent() {
               </p>
               <p className="mt-0.5">
                 Please present this receipt (printed copy or digital screenshot) to your tour driver upon pickup. 
-                For instant assistance, WhatsApp us at <strong className="text-emerald-800">+62 851-2801-6716</strong> or email <strong className="text-emerald-800">support@balimesaritour.com</strong>.
+                For instant assistance, WhatsApp us at <strong className="text-emerald-800">{WHATSAPP_CONTACT}</strong> or email <strong className="text-emerald-800">support@balimesaritour.com</strong>.
               </p>
             </div>
 
@@ -376,7 +380,7 @@ function ConfirmationContent() {
                   <p className="text-emerald-700 mt-0.5">Chat directly with local operator on WhatsApp.</p>
                 </div>
                 <a 
-                  href={`https://wa.me/6285128016716?text=Hi%20Bali%20Mesari,%20I%20have%20booking%20ref%20${ref}`}
+                  href={getWhatsAppUrl(`Hi Bali Mesari, I have booking ref ${ref}`)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold text-xs rounded-xl shrink-0 shadow-sm transition-colors cursor-pointer"
@@ -406,9 +410,16 @@ function ConfirmationContent() {
                   type="button"
                   onClick={() => {
                     if (!slug) return;
-                    router.push(`/activities/${encodeURIComponent(slug)}?review=true&name=${encodeURIComponent(name)}&ref=${encodeURIComponent(ref)}#reviews`);
+                    const reviewParams = new URLSearchParams({
+                      review: 'true',
+                      name,
+                      country,
+                      ref,
+                    });
+                    if (paypalSuccess && !captureError) reviewParams.set('verified', 'true');
+                    router.push(`/activities/${encodeURIComponent(slug)}?${reviewParams.toString()}#reviews`);
                   }}
-                  disabled={!slug}
+                  disabled={!slug || capturing}
                   className="px-4 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white font-bold text-xs rounded-xl shrink-0 shadow-sm flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <MessageSquarePlus className="w-3.5 h-3.5 text-amber-300" />

@@ -18,8 +18,8 @@
  *     used by all major payment processors
  */
 
+import { createClient } from '@supabase/supabase-js';
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { sanitizeInput } from '@/lib/security';
 
 const PAYPAL_ENV = process.env.PAYPAL_ENVIRONMENT || 'sandbox';
@@ -30,6 +30,30 @@ const PAYPAL_BASE_URL =
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || '';
 const PAYPAL_CLIENT_SECRET = process.env.PAYPAL_CLIENT_SECRET || '';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const isSupabaseConfigured = Boolean(supabaseUrl);
+const adminSupabase = supabaseUrl && serviceRoleKey
+  ? createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+  : null;
+
+type PayPalCapture = {
+  id?: string;
+  status?: string;
+  amount?: { value?: string; currency_code?: string };
+};
+
+type PayPalOrder = {
+  status?: string;
+  purchase_units?: Array<{
+    reference_id?: string;
+    custom_id?: string;
+    payments?: { captures?: PayPalCapture[] };
+  }>;
+  details?: Array<{ issue?: string }>;
+};
 
 async function getPayPalAccessToken(): Promise<string> {
   const credentials = Buffer.from(`${PAYPAL_CLIENT_ID}:${PAYPAL_CLIENT_SECRET}`).toString('base64');
@@ -45,6 +69,9 @@ async function getPayPalAccessToken(): Promise<string> {
   return data.access_token;
 }
 
+const isUuid = (value: string) =>
+  /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value);
+
 /**
  * POST /api/payment/paypal/capture
  *
@@ -55,126 +82,147 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const orderId = sanitizeInput(String(body.orderId || ''), 100);
-    const bookingRef = sanitizeInput(String(body.bookingRef || ''), 50);
-    const idempotencyKey = sanitizeInput(String(body.idempotencyKey || ''), 100) || (bookingRef ? `capture-${bookingRef}` : `capture-${orderId}`);
+    const bookingRef = sanitizeInput(String(body.bookingRef || ''), 50).toUpperCase();
+    const bookingDetails = body.bookingDetails && typeof body.bookingDetails === 'object'
+      ? body.bookingDetails as Record<string, unknown>
+      : {};
+    const activityId = sanitizeInput(String(bookingDetails.activity_id || ''), 36);
+    const idempotencyKey = sanitizeInput(String(body.idempotencyKey || ''), 100) || `capture-${bookingRef}`;
 
     if (!orderId) {
       return NextResponse.json({ error: 'Missing orderId' }, { status: 400 });
     }
-
-    // ── Idempotency Check in DB ─────────────────────────────────────────────
-    // If booking already recorded as paid with this order/capture ID, return immediately
-    if (isSupabaseConfigured && supabase) {
-      const { data: existingBooking } = await supabase
-        .from('bookings')
-        .select('id, booking_reference, payment_id, payment_status, total_amount, currency')
-        .or(`payment_id.eq.${orderId},booking_reference.eq.${bookingRef}`)
-        .maybeSingle();
-
-      if (existingBooking && existingBooking.payment_status === 'confirmed' && existingBooking.payment_id) {
-        return NextResponse.json({
-          status: 'COMPLETED',
-          captureId: existingBooking.payment_id,
-          amount: String(existingBooking.total_amount),
-          currency: existingBooking.currency || 'USD',
-          idempotent: true,
-        });
-      }
+    if (!/^BMT-[0-9A-F]{32}$/.test(bookingRef) || !isUuid(activityId)) {
+      return NextResponse.json({ error: 'Invalid booking details.' }, { status: 400 });
+    }
+    if (isSupabaseConfigured && !adminSupabase) {
+      return NextResponse.json({ error: 'Payment verification is not configured.' }, { status: 503 });
     }
 
     const accessToken = await getPayPalAccessToken();
-
-    // Capture the order with PayPal-Request-Id header for gateway-level idempotency
-    const captureResponse = await fetch(
-      `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'PayPal-Request-Id': idempotencyKey,
-        },
-      }
-    );
-
-    const capture = await captureResponse.json();
-
-    // Handle ORDER_ALREADY_CAPTURED error gracefully (idempotent case from PayPal)
-    if (!captureResponse.ok) {
-      const isAlreadyCaptured = capture.details?.some(
-        (d: { issue?: string }) => d.issue === 'ORDER_ALREADY_CAPTURED'
-      );
-
-      if (isAlreadyCaptured) {
-        // Fetch order details from PayPal to confirm completion
-        const orderCheck = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}`, {
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        });
-        if (orderCheck.ok) {
-          const orderData = await orderCheck.json();
-          const captureUnit = orderData.purchase_units?.[0]?.payments?.captures?.[0];
-          return NextResponse.json({
-            status: 'COMPLETED',
-            captureId: captureUnit?.id || orderId,
-            amount: captureUnit?.amount?.value,
-            currency: captureUnit?.amount?.currency_code || 'USD',
-            idempotent: true,
-          });
-        }
-      }
-
-      console.error('[PayPal] Capture failed:', capture);
-      return NextResponse.json(
-        { error: 'PayPal capture failed. Contact support.' },
-        { status: 502 }
-      );
+    const orderResponse = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    });
+    if (!orderResponse.ok) {
+      return NextResponse.json({ error: 'Could not verify PayPal order.' }, { status: 502 });
     }
 
-    // The capture response includes detailed payment information
-    const captureUnit = capture.purchase_units?.[0]?.payments?.captures?.[0];
-    const captureId = captureUnit?.id || orderId;
+    const order = await orderResponse.json() as PayPalOrder;
+    const orderUnit = order.purchase_units?.[0];
+    if (orderUnit?.reference_id !== bookingRef || orderUnit?.custom_id !== activityId) {
+      return NextResponse.json({ error: 'PayPal order does not match this booking.' }, { status: 403 });
+    }
 
-    // ── Update or Insert Booking Record in DB (Idempotent upsert) ───────────
-    if (isSupabaseConfigured && supabase && bookingRef) {
-      try {
-        const details = (body.bookingDetails || {}) as Record<string, any>;
-        const amountValue = Number(captureUnit?.amount?.value) || Number(details.total_amount) || 0;
+    if (adminSupabase) {
+      const { data: activity, error: activityError } = await adminSupabase
+        .from('activities')
+        .select('id')
+        .eq('id', activityId)
+        .eq('status', 'published')
+        .maybeSingle();
+      if (activityError || !activity) {
+        console.error('[PayPal] Booking activity verification failed:', activityError?.message);
+        return NextResponse.json({ error: 'Booking activity could not be verified.' }, { status: 400 });
+      }
+    }
 
-        const { error: dbErr } = await supabase
-          .from('bookings')
-          .upsert([{
-            booking_reference: bookingRef,
-            user_name: details.user_name || 'Guest',
-            user_email: details.user_email || 'guest@example.com',
-            user_phone: details.user_phone || '',
-            user_country: details.user_country || '',
-            booking_date: details.booking_date || new Date().toISOString().split('T')[0],
-            participants_count: Number(details.participants_count) || 1,
-            pickup_address: details.pickup_address || '',
-            total_amount: amountValue,
-            currency: captureUnit?.amount?.currency_code || 'USD',
-            payment_status: 'confirmed',
-            booking_status: 'confirmed',
-            payment_id: captureId,
-            payment_method: 'paypal',
-          }], { onConflict: 'booking_reference' });
-
-        if (dbErr) {
-          console.error('[PayPal] DB booking upsert error:', dbErr);
+    let capture = order;
+    if (order.status === 'APPROVED') {
+      const captureResponse = await fetch(
+        `${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            'PayPal-Request-Id': idempotencyKey,
+          },
         }
-      } catch (dbErr) {
-        console.error('[PayPal] Failed to upsert booking payment in DB:', dbErr);
+      );
+      capture = await captureResponse.json() as PayPalOrder;
+
+      if (!captureResponse.ok) {
+        const alreadyCaptured = capture.details?.some(detail => detail.issue === 'ORDER_ALREADY_CAPTURED');
+        if (!alreadyCaptured) {
+          console.error('[PayPal] Capture failed:', capture);
+          return NextResponse.json({ error: 'PayPal capture failed. Contact support.' }, { status: 502 });
+        }
+
+        const completedOrderResponse = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}`, {
+          headers: { 'Authorization': `Bearer ${accessToken}` },
+        });
+        if (!completedOrderResponse.ok) {
+          return NextResponse.json({ error: 'Could not verify completed PayPal capture.' }, { status: 502 });
+        }
+        capture = await completedOrderResponse.json() as PayPalOrder;
+      }
+    } else if (order.status !== 'COMPLETED') {
+      return NextResponse.json({ error: 'PayPal payment is not approved.' }, { status: 409 });
+    }
+
+    const captureUnit = capture.purchase_units?.[0]?.payments?.captures?.[0];
+    const captureId = captureUnit?.id;
+    if (capture.status !== 'COMPLETED' || captureUnit?.status !== 'COMPLETED' || !captureId) {
+      return NextResponse.json({ error: 'PayPal has not completed this payment.' }, { status: 409 });
+    }
+
+    if (adminSupabase) {
+      const bookingRow = {
+        booking_reference: bookingRef,
+        activity_id: activityId,
+        user_name: String(bookingDetails.user_name || 'Guest'),
+        user_email: String(bookingDetails.user_email || 'guest@example.com'),
+        user_phone: String(bookingDetails.user_phone || ''),
+        user_country: String(bookingDetails.user_country || ''),
+        booking_date: String(bookingDetails.booking_date || new Date().toISOString().split('T')[0]),
+        participants_count: Number(bookingDetails.participants_count) || 1,
+        pickup_address: String(bookingDetails.pickup_address || ''),
+        total_amount: Number(captureUnit.amount?.value) || Number(bookingDetails.total_amount) || 0,
+        currency: captureUnit.amount?.currency_code || 'USD',
+        payment_status: 'confirmed',
+        booking_status: 'confirmed',
+        payment_id: captureId,
+        payment_method: 'paypal',
+      };
+
+      const { error: bookingError } = await adminSupabase
+        .from('bookings')
+        .upsert([bookingRow], { onConflict: 'booking_reference' });
+      if (bookingError) {
+        console.error('[PayPal] Booking save failed:', bookingError.message);
+      }
+
+      const { error: ledgerError } = await adminSupabase
+        .from('verified_bookings')
+        .upsert([{
+          booking_reference: bookingRef,
+          activity_id: activityId,
+          capture_id: captureId,
+          user_name: bookingRow.user_name,
+          user_country: bookingRow.user_country,
+        }], { onConflict: 'booking_reference' });
+      if (ledgerError) {
+        console.error('[PayPal] Private booking verification save failed:', ledgerError.message);
+        return NextResponse.json(
+          { error: 'Payment completed, but review verification could not be saved. Contact support.' },
+          { status: 500 }
+        );
+      }
+      if (bookingError) {
+        return NextResponse.json(
+          { error: 'Payment completed, but booking could not be saved. Contact support.' },
+          { status: 500 }
+        );
       }
     }
 
     return NextResponse.json({
       status: capture.status,
-      captureId: captureId,
-      amount: captureUnit?.amount?.value,
-      currency: captureUnit?.amount?.currency_code,
+      captureId,
+      amount: captureUnit.amount?.value,
+      currency: captureUnit.amount?.currency_code,
       idempotent: false,
     });
-
   } catch (error) {
     console.error('[PayPal] Capture error:', error);
     return NextResponse.json(

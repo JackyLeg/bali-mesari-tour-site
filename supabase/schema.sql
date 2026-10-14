@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS public.availability (
 --   payment_status: 'pending' → 'confirmed' → 'refunded'
 CREATE TABLE IF NOT EXISTS public.bookings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    booking_reference VARCHAR(20) UNIQUE NOT NULL,
+    booking_reference VARCHAR(40) UNIQUE NOT NULL,
     activity_id UUID REFERENCES public.activities(id) ON DELETE SET NULL,
     user_name VARCHAR(150) NOT NULL,
     user_email VARCHAR(255) NOT NULL,
@@ -153,6 +153,8 @@ CREATE TABLE IF NOT EXISTS public.payment_transactions (
 CREATE TABLE IF NOT EXISTS public.reviews (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     activity_id UUID REFERENCES public.activities(id) ON DELETE CASCADE,
+    booking_reference VARCHAR(40) REFERENCES public.bookings(booking_reference) ON DELETE SET NULL,
+    is_verified BOOLEAN NOT NULL DEFAULT false,
     user_name VARCHAR(150) NOT NULL,
     user_country VARCHAR(100),
     rating INT CHECK (rating >= 1 AND rating <= 5),
@@ -161,6 +163,20 @@ CREATE TABLE IF NOT EXISTS public.reviews (
     review_date DATE DEFAULT CURRENT_DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS public.verified_bookings (
+    booking_reference VARCHAR(40) PRIMARY KEY,
+    activity_id UUID NOT NULL REFERENCES public.activities(id) ON DELETE CASCADE,
+    capture_id VARCHAR(255) UNIQUE NOT NULL,
+    user_name VARCHAR(150) NOT NULL,
+    user_country VARCHAR(100),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+ALTER TABLE public.verified_bookings ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.verified_bookings FROM PUBLIC, anon, authenticated;
+GRANT ALL ON public.verified_bookings TO service_role;
+REVOKE INSERT ON public.reviews FROM anon, authenticated;
+GRANT SELECT, INSERT ON public.reviews TO service_role;
 
 -- 9. TEAM MEMBERS (Admin Users)
 -- 📚 SECURITY DESIGN:
@@ -224,7 +240,6 @@ CREATE POLICY "Public read reviews" ON public.reviews FOR SELECT USING (true);
 
 -- Public insert policy for bookings & reviews
 CREATE POLICY "Public insert bookings" ON public.bookings FOR INSERT WITH CHECK (true);
-CREATE POLICY "Public insert reviews" ON public.reviews FOR INSERT WITH CHECK (true);
 CREATE POLICY "Public insert audit log" ON public.login_audit_log FOR INSERT WITH CHECK (true);
 
 -- Team members: only authenticated users (Supabase auth) can read
@@ -342,7 +357,7 @@ CREATE TABLE IF NOT EXISTS public.availability (
 -- 7. BOOKINGS
 CREATE TABLE IF NOT EXISTS public.bookings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    booking_reference VARCHAR(20) UNIQUE NOT NULL,
+    booking_reference VARCHAR(40) UNIQUE NOT NULL,
     activity_id UUID REFERENCES public.activities(id) ON DELETE SET NULL,
     user_name VARCHAR(150) NOT NULL,
     user_email VARCHAR(255) NOT NULL,
@@ -364,6 +379,8 @@ CREATE TABLE IF NOT EXISTS public.bookings (
 CREATE TABLE IF NOT EXISTS public.reviews (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     activity_id UUID REFERENCES public.activities(id) ON DELETE CASCADE,
+    booking_reference VARCHAR(40) REFERENCES public.bookings(booking_reference) ON DELETE SET NULL,
+    is_verified BOOLEAN NOT NULL DEFAULT false,
     user_name VARCHAR(150) NOT NULL,
     user_country VARCHAR(100),
     rating INT CHECK (rating >= 1 AND rating <= 5),
@@ -372,6 +389,9 @@ CREATE TABLE IF NOT EXISTS public.reviews (
     review_date DATE DEFAULT CURRENT_DATE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS reviews_booking_reference_unique
+    ON public.reviews (booking_reference)
+    WHERE booking_reference IS NOT NULL;
 
 -- Row Level Security (RLS) Configuration
 ALTER TABLE public.destinations ENABLE ROW LEVEL SECURITY;
@@ -395,7 +415,6 @@ CREATE POLICY "Public read reviews" ON public.reviews FOR SELECT USING (true);
 -- Public insert policy for bookings & reviews
 CREATE POLICY "Public insert bookings" ON public.bookings FOR INSERT WITH CHECK (true);
 CREATE POLICY "Public update bookings" ON public.bookings FOR UPDATE USING (true) WITH CHECK (true);
-CREATE POLICY "Public insert reviews" ON public.reviews FOR INSERT WITH CHECK (true);
 
 -- 9. BLOGS & ARTICLES
 CREATE TABLE IF NOT EXISTS public.blogs (

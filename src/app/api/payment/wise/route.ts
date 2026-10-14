@@ -33,6 +33,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { sanitizeInput } from '@/lib/security';
+import { getWhatsAppUrl, WHATSAPP_CONTACT } from '@/lib/contact';
 
 const WISE_PROFILE_ID = process.env.WISE_PROFILE_ID || '';
 
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
           error: 'Wise payment is not configured yet.',
           fallback: true,
           // Provide the WhatsApp contact as fallback
-          whatsappUrl: `https://wa.me/6285128016716?text=Hi!%20I%20want%20to%20pay%20via%20Wise%20for%20booking%20${bookingRef}%20-%20${activityTitle}%20-%20USD%20${amount}`,
+          whatsappUrl: getWhatsAppUrl(`Hi! I want to pay via Wise for booking ${bookingRef} - ${activityTitle} - USD ${amount}`),
         },
         { status: 200 } // Return 200 so the UI can handle gracefully
       );
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
       reference,
       amount: amount.toFixed(2),
       currency: 'USD',
-      note: `After payment, please send your Wise confirmation to support@balimesari.com or WhatsApp +62 851-2801-6716`,
+      note: `After payment, please send your Wise confirmation to support@balimesari.com or WhatsApp ${WHATSAPP_CONTACT}`,
     });
 
   } catch (error) {

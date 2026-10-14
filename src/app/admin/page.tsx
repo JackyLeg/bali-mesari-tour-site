@@ -31,6 +31,7 @@ import { Activity, BlogPost } from '@/types';
 import { INITIAL_ACTIVITIES, getActivities, getBlogPosts, saveBlogPostsLocal, deleteBlogPostLocal } from '@/lib/data';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 import { verifyPassword, checkRateLimit, resetRateLimit, sanitizeEmail, sanitizeInput } from '@/lib/security';
+import { getWhatsAppUrl, WHATSAPP_CONTACT } from '@/lib/contact';
 import {
   DollarSign,
   ShoppingBag,
@@ -2371,7 +2372,7 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
                   booking_reference: target.ref,
                   user_name: target.name,
                   user_email: target.email,
-                  user_phone: '+6285128016716',
+                  user_phone: WHATSAPP_CONTACT,
                   user_country: 'Traveler',
                   booking_date: target.date,
                   participants_count: target.guests,
@@ -2870,7 +2871,7 @@ function AdminDashboard({ onLogout, currentUserEmail }: { onLogout: () => void; 
 
                           {/* WhatsApp Direct Link */}
                           <a
-                            href={`https://wa.me/6285128016716?text=Hello%20${encodeURIComponent(b.name)},%20we%20are%20contacting%20you%20from%20Bali%20Mesari%20Tour%20regarding%20booking%20${b.ref}`}
+                            href={getWhatsAppUrl(`Hello ${b.name}, we are contacting you from Bali Mesari Tour regarding booking ${b.ref}`)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold text-xs rounded-xl flex items-center gap-1 shadow-sm transition-colors"

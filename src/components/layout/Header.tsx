@@ -27,6 +27,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useCurrency } from '@/lib/currency';
+import { getWhatsAppUrl } from '@/lib/contact';
 
 export default function Header() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -163,7 +164,7 @@ export default function Header() {
 
             {/* Direct WhatsApp / Support */}
             <a 
-              href="https://wa.me/6285128016716?text=Hello%20Bali%20Mesari%20Tour,%20I%20want%20to%20ask%20about%20booking" 
+              href={getWhatsAppUrl('Hello Bali Mesari Tour, I want to ask about booking')}
               target="_blank" 
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-amber-400 hover:bg-amber-300 px-3.5 py-2 rounded-xl shadow-sm hover:shadow transition-all"
@@ -295,7 +296,7 @@ export default function Header() {
 
             <div className="pt-3 border-t border-gray-100 flex flex-col gap-2 mt-1">
               <a 
-                href="https://wa.me/6285128016716?text=Hello%20Bali%20Mesari%20Tour" 
+                href={getWhatsAppUrl('Hello Bali Mesari Tour')}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full text-center py-2.5 bg-amber-400 hover:bg-amber-300 text-emerald-900 font-bold rounded-xl text-sm shadow-sm"

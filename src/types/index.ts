@@ -74,6 +74,7 @@ export interface Activity {
 export interface Review {
   id: string;
   activityId: string;
+  isVerified?: boolean;
   userName: string;
   userCountry: string;
   userAvatar?: string;

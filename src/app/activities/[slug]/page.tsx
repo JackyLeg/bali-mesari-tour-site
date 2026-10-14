@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import ActivityCard from '@/components/common/ActivityCard';
@@ -28,77 +28,81 @@ import {
   X
 } from 'lucide-react';
 import { useCurrency } from '@/lib/currency';
-import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 function WriteReviewModal({
   activityId,
   activityTitle,
   defaultUserName = '',
+  defaultUserCountry = '',
   defaultBookingRef = '',
+  verifiedBooking = false,
   onClose,
   onReviewSubmitted,
 }: {
   activityId: string;
   activityTitle: string;
   defaultUserName?: string;
+  defaultUserCountry?: string;
   defaultBookingRef?: string;
+  verifiedBooking?: boolean;
   onClose: () => void;
   onReviewSubmitted: (newReview: Review) => void;
 }) {
   const [userName, setUserName] = useState(defaultUserName);
-  const [userCountry, setUserCountry] = useState('Indonesia');
-  const [travelerType, setTravelerType] = useState('Couple');
-  const [bookingRef, setBookingRef] = useState(defaultBookingRef);
+  const [userCountry, setUserCountry] = useState(defaultUserCountry || 'Indonesia');
+  const [travelerType, setTravelerType] = useState(verifiedBooking ? 'Verified Guest' : 'Couple');
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [hoverRating, setHoverRating] = useState<number | null>(null);
+  const [submitError, setSubmitError] = useState('');
+  const [verificationState, setVerificationState] = useState(verifiedBooking ? 'checking' : 'not-required');
+
+  useEffect(() => {
+    if (!verifiedBooking) return;
+    const params = new URLSearchParams({ ref: defaultBookingRef, activityId });
+    fetch(`/api/reviews?${params.toString()}`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Booking verification failed.');
+        setUserName(data.booking.userName);
+        setUserCountry(data.booking.userCountry);
+        setVerificationState('verified');
+      })
+      .catch((error: unknown) => {
+        setVerificationState('failed');
+        setSubmitError(error instanceof Error ? error.message : 'Booking verification failed.');
+      });
+  }, [activityId, defaultBookingRef, verifiedBooking]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-
-    const reviewPayload = {
-      activity_id: activityId,
-      user_name: userName.trim() || 'Verified Guest',
-      user_country: userCountry.trim() || 'Traveler',
-      rating,
-      comment: comment.trim(),
-      traveler_type: travelerType,
-    };
-
-    let newReviewId = `rev-${Date.now()}`;
-
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase
-          .from('reviews')
-          .insert([reviewPayload])
-          .select('id')
-          .maybeSingle();
-
-        if (!error && data?.id) {
-          newReviewId = data.id;
-        }
-      } catch (err) {
-        console.error('Supabase review insert error:', err);
-      }
+    setSubmitError('');
+    try {
+      const response = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          activityId,
+          userName,
+          userCountry,
+          travelerType,
+          rating,
+          comment,
+          verified: verifiedBooking,
+          bookingReference: verifiedBooking ? defaultBookingRef : undefined,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not submit review.');
+      onReviewSubmitted(data.review as Review);
+      onClose();
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Could not submit review.');
+    } finally {
+      setSubmitting(false);
     }
-
-    const createdReview: Review = {
-      id: newReviewId,
-      activityId,
-      userName: reviewPayload.user_name,
-      userCountry: reviewPayload.user_country,
-      rating,
-      comment: reviewPayload.comment,
-      date: new Date().toISOString().split('T')[0],
-      travelerType: travelerType as any,
-    };
-
-    onReviewSubmitted(createdReview);
-    setSubmitting(false);
-    onClose();
   };
 
   return (
@@ -115,6 +119,15 @@ function WriteReviewModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs font-medium text-gray-700">
+          {verifiedBooking && (
+            <p className="rounded-xl bg-emerald-50 p-3 text-emerald-800">
+              {verificationState === 'checking'
+                ? 'Checking your paid booking...'
+                : verificationState === 'verified'
+                  ? 'Booking verified. Only rating and review can be changed.'
+                  : submitError}
+            </p>
+          )}
           <div>
             <label className="font-bold text-gray-900 block mb-1.5">Your Overall Rating *</label>
             <div className="flex items-center gap-1.5">
@@ -147,6 +160,7 @@ function WriteReviewModal({
                 placeholder="e.g. Sarah Jenkins"
                 value={userName}
                 onChange={(e) => setUserName(e.target.value)}
+                readOnly={verifiedBooking}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-900 font-semibold"
               />
             </div>
@@ -158,6 +172,7 @@ function WriteReviewModal({
                 placeholder="e.g. Australia, Germany, USA"
                 value={userCountry}
                 onChange={(e) => setUserCountry(e.target.value)}
+                readOnly={verifiedBooking}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-900"
               />
             </div>
@@ -166,26 +181,20 @@ function WriteReviewModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="font-bold text-gray-900 block mb-1">Traveler Type</label>
-              <select
-                value={travelerType}
-                onChange={(e) => setTravelerType(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-800 cursor-pointer"
-              >
-                <option value="Couple">Couple</option>
-                <option value="Family">Family with Kids</option>
-                <option value="Solo">Solo Traveler</option>
-                <option value="Friends">Group of Friends</option>
-              </select>
-            </div>
-            <div>
-              <label className="font-bold text-gray-900 block mb-1">Booking Ref <span className="font-normal text-gray-400">(Optional)</span></label>
-              <input
-                type="text"
-                placeholder="e.g. BMT-849201"
-                value={bookingRef}
-                onChange={(e) => setBookingRef(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-900"
-              />
+              {verifiedBooking ? (
+                <input value="Verified Guest" readOnly className="w-full bg-gray-100 border border-gray-200 rounded-xl px-3 py-2.5 text-xs text-gray-500" />
+              ) : (
+                <select
+                  value={travelerType}
+                  onChange={(e) => setTravelerType(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-emerald-600 text-gray-800 cursor-pointer"
+                >
+                  <option value="Couple">Couple</option>
+                  <option value="Family">Family with Kids</option>
+                  <option value="Solo">Solo Traveler</option>
+                  <option value="Friends">Group of Friends</option>
+                </select>
+              )}
             </div>
           </div>
 
@@ -202,6 +211,7 @@ function WriteReviewModal({
           </div>
 
           <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
+            {submitError && !verifiedBooking && <p className="mr-auto text-red-600">{submitError}</p>}
             <button
               type="button"
               onClick={onClose}
@@ -211,10 +221,10 @@ function WriteReviewModal({
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || (verifiedBooking && verificationState !== 'verified')}
               className="px-6 py-2.5 bg-emerald-800 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-emerald-900/20 transition-all cursor-pointer disabled:opacity-60"
             >
-              {submitting ? 'Submitting...' : 'Submit Verified Review'}
+              {submitting ? 'Submitting...' : 'Submit Review'}
             </button>
           </div>
         </form>
@@ -226,6 +236,7 @@ function WriteReviewModal({
 export default function ActivityDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const slug = params.slug as string;
 
   const [activity, setActivity] = useState<Activity | null>(null);
@@ -253,22 +264,11 @@ export default function ActivityDetailPage() {
 
   // Review modal state
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
-  const [initialReviewName, setInitialReviewName] = useState('');
-  const [initialReviewRef, setInitialReviewRef] = useState('');
+  const [reviewModalDismissed, setReviewModalDismissed] = useState(false);
+  const reviewFromUrl = searchParams.get('review') === 'true' || searchParams.get('action') === 'review';
+  const showReviewModal = reviewModalOpen || (reviewFromUrl && !reviewModalDismissed);
+  const verifiedReview = reviewFromUrl && !reviewModalDismissed && searchParams.get('verified') === 'true';
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const search = new URLSearchParams(window.location.search);
-      if (search.get('review') === 'true' || search.get('action') === 'review') {
-        const prefillName = search.get('name') || '';
-        const prefillRef = search.get('ref') || '';
-        if (prefillName) setInitialReviewName(prefillName);
-        if (prefillRef) setInitialReviewRef(prefillRef);
-        setReviewModalOpen(true);
-      }
-    }
-  }, []);
 
   const handleReviewSubmitted = (newReview: Review) => {
     const updatedReviews = [newReview, ...reviews];
@@ -284,7 +284,7 @@ export default function ActivityDetailPage() {
       });
     }
 
-    setToastMsg('Thank you! Your verified traveler review has been published.');
+    setToastMsg('Thank you! Your review has been published.');
     setTimeout(() => setToastMsg(null), 4000);
   };
 
@@ -649,13 +649,16 @@ export default function ActivityDetailPage() {
               <div id="reviews" className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm scroll-mt-24">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                   <div>
-                    <h3 className="text-base font-extrabold text-gray-900">Verified Traveler Reviews</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">{reviews.length} authentic ratings from recent guests</p>
+                    <h3 className="text-base font-extrabold text-gray-900">Traveler Reviews</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">{reviews.length} ratings from travelers</p>
                   </div>
                   <div className="flex items-center gap-4">
                     <button
                       type="button"
-                      onClick={() => setReviewModalOpen(true)}
+                      onClick={() => {
+                        setReviewModalDismissed(true);
+                        setReviewModalOpen(true);
+                      }}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200/80 font-bold text-xs transition-colors shadow-sm cursor-pointer"
                     >
                       <MessageSquarePlus className="w-4 h-4 text-emerald-700" />
@@ -675,6 +678,7 @@ export default function ActivityDetailPage() {
                         <div>
                           <span className="font-bold text-xs text-gray-900 block">{rev.userName}</span>
                           <span className="text-[11px] text-gray-400">{rev.userCountry} • {rev.travelerType}</span>
+                          {rev.isVerified && <span className="mt-1 inline-block text-[10px] font-bold text-emerald-700">Verified booking</span>}
                         </div>
                         <div className="flex text-amber-400 text-xs">
                           {[...Array(rev.rating)].map((_, i) => (
@@ -1007,13 +1011,18 @@ export default function ActivityDetailPage() {
         </div>
       )}
 
-      {reviewModalOpen && activity && (
+      {showReviewModal && activity && (
         <WriteReviewModal
           activityId={activity.id}
           activityTitle={activity.title}
-          defaultUserName={initialReviewName}
-          defaultBookingRef={initialReviewRef}
-          onClose={() => setReviewModalOpen(false)}
+          defaultUserName={searchParams.get('name') || ''}
+          defaultUserCountry={searchParams.get('country') || ''}
+          defaultBookingRef={searchParams.get('ref') || ''}
+          verifiedBooking={verifiedReview}
+          onClose={() => {
+            setReviewModalOpen(false);
+            setReviewModalDismissed(true);
+          }}
           onReviewSubmitted={handleReviewSubmitted}
         />
       )}
